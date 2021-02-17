@@ -18,6 +18,7 @@ Automatic Information System (AIS) data are a powerful tool for tracking and mon
 2. Fisheries activity.  Are these going to be public? If so please provide file name and description and add to repository. If not please provide some availability statement like available by request to GFW. 
 3. Environmental and behavioural drivers. Global rasters at .25 degrees resolution. Raster metadata is available in the supplementary materials.  
 
+## Machine learning. 
 **Functions:**  
 1. load_libraries.R - loads and installs are required R packages. 
 2. filter_down_your_data.R - filters data to find 1:1 ratio of presences to pseudo-absences.  
