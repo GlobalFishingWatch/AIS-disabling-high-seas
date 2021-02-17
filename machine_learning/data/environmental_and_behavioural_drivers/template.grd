@@ -1,0 +1,26 @@
+[general]
+creator=R package 'raster'
+created=2019-11-08 12:20:26
+[georeference]
+nrows=720
+ncols=1440
+xmin=-180
+ymin=-90
+xmax=180
+ymax=90
+projection=+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0
+[data]
+datatype=FLT4S
+byteorder=little
+nbands=1
+bandorder=BIL
+categorical=FALSE
+minvalue=1
+maxvalue=1
+nodatavalue=-3.4e+38
+[legend]
+legendtype=
+values=
+color=
+[description]
+layername=Sea.level.anomaly
