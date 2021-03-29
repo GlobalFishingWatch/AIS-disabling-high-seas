@@ -1,0 +1,195 @@
+/*
+##################################################################
+DESCRIPTION: This query combines AIS off and on event tables
+into a table of AIS gap events, including open gaps. Note that
+this query overwrite the AIS gap events table every time that it
+is run so that gaps are properly closed and partitioned.
+##################################################################
+
+jinja2 PARAMS:
+  - date: which date to generate gaps for
+  - off_events_table: BQ table of AIS off events
+  - on_events_table: BQ table of AIS on events
+
+##################################################################
+DEPENDENCIES:
+  - To properly calculate all gaps, it must have off and on events data
+  run for every day up to and including today.
+  - Input tables
+    - off_events_table (currently gfw_research_precursors.ais_off_events
+    but needs to be replaced and versioned)
+    - on_events_table (currently gfw_research_precursors.ais_on_events
+    but needs to replaced and versioned)
+  - Input parameters (see jinja2 parameter list above)
+##################################################################
+*/
+
+
+##################################################################
+# HELPER FUNCTIONS
+##################################################################
+
+# Today
+CREATE TEMP FUNCTION today() AS (DATE('{{ date }}'));
+
+# Tommorrow
+CREATE TEMP FUNCTION tomorrow() AS (DATE_ADD(today(), INTERVAL 1 DAY));
+
+# End of Today
+# Used for calculating intermediate gap_hours for open gaps
+CREATE TEMP FUNCTION end_of_today() AS (TIMESTAMP_ADD(TIMESTAMP(today()), INTERVAL 86399 second));
+
+##################################################################
+# QUERY
+##################################################################
+
+WITH
+
+  /*
+  Get all historical off events up through today
+  */
+  off_events AS (
+  SELECT
+    *
+  FROM `{{ off_events_table }}`
+  WHERE DATE(_partitiontime) <= today()
+),
+
+  /*
+  Get all historical on events up through today
+  */
+  on_events AS (
+  SELECT
+  *
+  FROM `{{ on_events_table }}`
+  WHERE DATE(_partitiontime) <= today()
+),
+
+  /*
+  Join off events with all on events that occur later than off_timestamp
+  and find the most recent off event. If there is no viable on event,
+  the off event is joined with NULLs to represent an open gap event.
+  */
+  events_join AS (
+  SELECT
+    a.ssvid as ssvid,
+    * EXCEPT (ssvid),
+    RANK() OVER (PARTITION BY a.ssvid, on_timestamp ORDER BY off_timestamp DESC) rank
+  FROM off_events a
+  LEFT JOIN on_events b
+  ON
+    a.ssvid = b.ssvid
+    AND (off_timestamp < on_timestamp OR on_timestamp IS NULL) # second portion keeps open gaps
+  # If events do happen to be missing on/off pair, this clause keeps only valid matches
+  # If the ais_off_events and ais_on_events are working properly, this clause does nothing
+  WHERE (((next_timestamp is NULL OR DATE(next_timestamp) = tomorrow()) AND prev_timestamp  is NULL) OR (next_timestamp = on_timestamp AND off_timestamp = prev_timestamp))
+),
+
+  /*
+  Return only those events that are sequential
+  e.g. first on event following the off event.
+  If there is no viable on event, then the off event 
+  remains open and is_closed is set to 0.
+  */
+  gaps AS (
+  SELECT
+    *,
+    IF(on_timestamp IS NULL, 0, 1) is_closed
+  FROM events_join
+  WHERE rank = 1
+),
+  
+  /*
+   Calculate gap features:
+   - gap id (MD5 hash of ssvid, off_timestamp, off_lat, and off_lon)
+   - gap duration (hours)
+   - gap distance (meters)
+   - gap implied speed (knots)
+  */
+  gaps_features AS(
+  SELECT
+    # Create gap_id
+    TO_HEX(
+      MD5 (
+        format("%s|%t|%f|%f",
+        ssvid,
+        off_timestamp,
+        IFNULL(off_lat,0.0),
+        IFNULL(off_lon,0.0))
+       )
+    ) as gap_id,
+    * EXCEPT(
+      prev_msgid,
+      prev_timestamp,
+      rank,
+      next_timestamp,
+      next_msgid
+    ),
+    gap_distance_m / 1852 / gap_hours as gap_implied_speed_knots
+  FROM
+    (SELECT
+      *,
+      IF(is_closed = 1, TIMESTAMP_DIFF(on_timestamp, off_timestamp, MINUTE), TIMESTAMP_DIFF(end_of_today(), off_timestamp, MINUTE)) / 60 as gap_hours,
+      ST_DISTANCE(ST_GEOGPOINT(off_lon, off_lat), ST_GEOGPOINT(on_lon, on_lat)) as gap_distance_m
+    FROM gaps
+    WHERE
+      # Closed gaps
+      (on_timestamp IS NOT NULL
+      AND off_distance_from_shore_m > 0
+      AND on_distance_from_shore_m > 0)
+      OR
+      # Open gaps
+      # NOTE: these could be later dropped if on_distance_from_shore_m ends up being <= 0
+      (on_timestamp IS NULL
+      AND off_distance_from_shore_m > 0)
+    )
+)
+
+/*
+Final output. Rename variables to use "gap_start" and "gap_end"
+prefixes where applicable.
+*/
+SELECT
+  # Gap features
+  ssvid,
+  gap_id,
+  off_timestamp as gap_start,
+  on_timestamp as gap_end,
+  gap_hours,
+  gap_distance_m,
+  gap_implied_speed_knots,
+  
+  # Off event features
+  off_msgid as gap_start_msgid,
+  off_lat as gap_start_lat,
+  off_lon as gap_start_lon,
+  off_course as gap_start_course,
+  off_speed_knots as gap_start_speed_knots,
+  off_class as gap_start_class,
+  off_receiver_type as gap_start_receiver_type,
+  off_distance_from_shore_m as gap_start_distance_from_shore_m,
+  off_distance_from_port_m as gap_start_distance_from_port_m,
+  off_eez as gap_start_eez,
+  off_rfmo as gap_start_rfmo,
+  
+  # On event features
+  on_msgid as gap_end_msgid,
+  on_lat as gap_end_lat,
+  on_lon as gap_end_lon,
+  on_course as gap_end_course,
+  on_speed_knots as gap_end_speed_knots,
+  on_class as gap_end_class,
+  on_receiver_type as gap_end_receiver_type,
+  on_distance_from_shore_m as gap_end_distance_from_shore_m,
+  on_distance_from_port_m as gap_end_distance_from_port_m,
+  on_eez as gap_end_eez,
+  on_rfmo as gap_end_rfmo,
+  
+  # Classification model features
+  positions_12_hours_before,
+  positions_12_hours_before_sat,
+  positions_12_hours_before_ter,
+  
+  # Flag for if gap is closed
+  is_closed
+FROM gaps_features

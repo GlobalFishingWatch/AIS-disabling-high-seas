@@ -1,0 +1,92 @@
+CREATE TEMP FUNCTION today() AS (DATE('{{YYYY_MM_DD}}'));
+CREATE TEMP FUNCTION yesterday() AS (DATE_SUB(today(), INTERVAL 1 DAY));
+CREATE TEMP FUNCTION tomorrow() AS (DATE_ADD(today(), INTERVAL 1 DAY));
+ # Define some utility functions to make thinks more readable
+CREATE TEMP FUNCTION YYYYMMDD(d DATE) AS (
+    # Format a date as YYYYMMDD
+    # e.g. DATE('2018-01-01') => '20180101'
+    FORMAT_DATE('%Y%m%d',
+      d) );
+CREATE TEMP FUNCTION first_half_hour() AS ( TIMESTAMP_ADD(TIMESTAMP(today()), INTERVAL 30 MINUTE) );
+
+CREATE TEMP FUNCTION weight_average_lons(lon float64, lon2 float64, timeto int64, timeto2 int64) AS
+(
+case
+when lon - lon2 > 350 then ( (lon-360)*timeto2 + lon2*timeto)/(timeto+timeto2)
+when lon - lon2 < -350 then ( (lon+360)*timeto2 + lon2*timeto)/(timeto+timeto2)
+else (lon*timeto2 + lon2*timeto)/(timeto+timeto2) end );
+
+CREATE TEMP FUNCTION reasonable_lon(lon float64) AS
+(case when lon > 180 then lon - 360
+when lon < -180 then lon + 360
+else lon end
+);
+
+CREATE TEMP FUNCTION avg_speed_knots(lon float64,lat float64,lon2 float64,lat2 float64, seconds float64) as(
+st_distance(st_geogpoint(lon,lat),st_geogpoint(lon2,lat2))/seconds*3600/1852);
+
+
+with
+--
+times as (
+select * from unnest(GENERATE_TIMESTAMP_ARRAY(first_half_hour(),
+                                timestamp_add(first_half_hour(), interval 23 Hour),
+                                INTERVAL 1 hour)) as hour_midpoint
+),
+--
+
+loitering_table as (
+select
+ssvid, loitering_start_timestamp,
+loitering_end_timestamp,
+loitering_hours, avg_distance_from_shore_nm,
+start_lon, start_lat, end_lon, end_lat
+from `world-fishing-827.proj_ais_gaps_catena.loitering_events_v{{input_version}}` ),
+--
+--
+candidate_positions as (
+        SELECT
+          *,
+          timestamp_diff(loitering_end_timestamp,
+            hour_midpoint,
+            SECOND) timeto2,
+          timestamp_diff(hour_midpoint,loitering_start_timestamp,
+            SECOND) timeto
+       FROM
+        loitering_table
+        CROSS JOIN
+         times
+        WHERE
+               loitering_start_timestamp  <= hour_midpoint
+               AND loitering_end_timestamp > hour_midpoint
+          ),
+--
+--
+interpolated_positions as (
+      SELECT
+        (start_lat*timeto2 + end_lat*timeto)/(timeto+timeto2) lat_center,
+        reasonable_lon(weight_average_lons(start_lon, end_lon, timeto, timeto2)) lon_center,
+        avg_speed_knots(start_lon,start_lat,end_lon,end_lat, timeto+timeto2) as interpolated_speed_knots,
+        *
+      FROM candidate_positions)
+          --
+          --
+select
+ ssvid,
+ hour_midpoint,
+ lat_center  as lat,
+ lon_center  as lon,
+ start_lat,
+ start_lon,
+ end_lat,
+ end_lon,
+ case when timeto is null then timeto2/3600
+ when timeto2 is null then timeto/3600
+ when timeto > timeto2 then timeto2/3600
+ when timeto <= timeto2 then timeto/3600
+ else timeto/3600 end as hours_to_nearest_ping,
+ loitering_start_timestamp,
+ loitering_end_timestamp,
+ (timeto + timeto2)/3600 gap_hours,
+ interpolated_speed_knots,
+ from interpolated_positions

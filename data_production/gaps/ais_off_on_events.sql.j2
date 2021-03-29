@@ -1,0 +1,237 @@
+/*
+##################################################################
+DESCRIPTION: This query produces tables of AIS off/on events
+##################################################################
+
+jinja2 PARAMS:
++ pipeline_table: AIS pipeline table to use
++ segs_table: AIS segment table to use
++ event: event type ('on' or 'off')
++ date: which date to generate off/on events for
++ min_gap_length: minimum length of a closed event to be included
+
+##################################################################
+DEPENDENCIES:
+  - Must have AIS data for yesterday, today, and tomorrow
+  - Input tables
+    - gfw_research.pipe_vYYYYMMDD (query was built on 20190502)
+    - gfw_research.pipe_vYYYYMMDD_segs (query was built on 20190502)
+    - gfw_research.eez_info
+  - Input parameters (see jinja2 parameter list above)
+##################################################################
+*/
+
+
+##################################################################
+# HELPER FUNCTIONS
+##################################################################
+
+# Today
+CREATE TEMP FUNCTION today() AS (DATE('{{ date }}'));
+# Yesterday
+CREATE TEMP FUNCTION yesterday() AS (DATE_SUB(today(), INTERVAL 1 DAY));
+# Tomorrow
+CREATE TEMP FUNCTION tomorrow() AS (DATE_ADD(today(), INTERVAL 1 DAY));
+
+##################################################################
+# QUERY
+##################################################################
+
+WITH
+
+  /*
+  Define source table for identifying off and on events:
+    - off_events: consider today and tomorrow
+    - on_events: consider today and yesterday
+  */
+  source_table AS (
+  SELECT
+    ssvid,
+    msgid,
+    timestamp,
+    lat,
+    lon,
+    course,
+    speed_knots,
+    type,
+    receiver_type,
+    regions,
+    distance_from_shore_m,
+    distance_from_port_m
+  FROM
+      `{{  pipeline_table  }}`
+  {% if event == 'off' %}
+  WHERE DATE(date) >= today() AND DATE(date) <= tomorrow()
+  {% elif event == 'on' %}
+  WHERE DATE(date) <= today() AND DATE(date) >= yesterday()
+  {% endif %}
+  AND seg_id IN (
+  SELECT
+    seg_id
+  FROM
+    `{{  segs_table  }}`
+  WHERE
+    good_seg
+    and not overlapping_and_short)
+),
+
+  /*
+  Get all positions in time range and find the next AIS position.
+  Include the following features:
+    - course
+    - speed (knots)
+    - class: AIS Class A or B
+    - receiver_type: satellite vs terrestrial
+    - distance_from_shore_m
+    - distance_from_port_m
+    - EEZ
+    - RFMO
+  */
+  positions AS (
+  SELECT
+    ssvid,
+    msgid as {{event}}_msgid,
+    timestamp as {{event}}_timestamp,
+    /* LAG/LEAD depending on event type */
+    {% if event == 'off' %}
+    LEAD(msgid,1) OVER (PARTITION BY ssvid ORDER BY timestamp) next_msgid,
+    LEAD(timestamp,1) OVER (PARTITION BY ssvid ORDER BY timestamp) as next_timestamp,
+    {% elif event == 'on' %}
+    LAG(msgid,1) OVER (PARTITION BY ssvid ORDER BY timestamp) prev_msgid,
+    LAG(timestamp,1) OVER (PARTITION BY ssvid ORDER BY timestamp) as prev_timestamp,
+    {% endif %}
+    /* Name remaining fields depending on event type */
+    lat as {{event}}_lat,
+    lon as {{event}}_lon,
+    course as {{event}}_course,
+    speed_knots as {{event}}_speed_knots,
+    # Identify Class A and B messages
+    (CASE
+        WHEN type IN ('AIS.1', 'AIS.2', 'AIS.3') THEN 'A'
+        WHEN type IN ('AIS.18','AIS.19') THEN 'B'
+        ELSE NULL
+     END
+   ) as {{event}}_class,
+    receiver_type as {{event}}_receiver_type,
+    distance_from_shore_m as {{event}}_distance_from_shore_m,
+    distance_from_port_m as {{event}}_distance_from_port_m,
+    regions.eez[SAFE_ORDINAL(1)] as {{event}}_eez,
+    ARRAY_TO_STRING(regions.rfmo, ", ") as {{event}}_rfmo
+  FROM
+    source_table
+),
+
+  /*
+  Calculate elapsed time between positions and keep gaps greater than
+  min_gap_length hours AND any events that have not been closed
+  */
+  events AS (
+  SELECT
+    *
+  FROM
+    positions
+  {% if event == 'off' %}
+  WHERE DATE(off_timestamp) = today()
+  AND (
+    TIMESTAMP_DIFF(next_timestamp, off_timestamp, MINUTE) / 60 > {{min_gap_length}}
+    OR next_timestamp IS NULL
+  )
+  {% elif event == 'on' %}
+  WHERE DATE(on_timestamp) = today()
+  AND (
+    TIMESTAMP_DIFF(on_timestamp, prev_timestamp, MINUTE) / 60 > {{min_gap_length}}
+    OR prev_timestamp IS NULL
+  )
+  {% endif %}
+)
+
+/*
+ FOR OFF EVENTS ONLY: Calculate gap features necessary for classification:
+   - positions 12 hours before (all, satellite only, and terrestrial only)
+*/
+{% if event == 'off' %}
+,
+
+  /*
+  Position messages for all SSVID in the gaps_features table,
+  filtered to today and yesterday AND only good segments.
+  */
+  legit_position_messages AS (
+  SELECT
+    ssvid,
+    timestamp,
+    receiver_type,
+    floor(lat) as lat_bin,
+    floor(lon) as lon_bin,
+    EXTRACT(year from timestamp) as year,
+    EXTRACT(month from timestamp) as month,
+    # Identify Class A and B messages
+    (CASE
+      WHEN type IN ('AIS.1', 'AIS.2', 'AIS.3') THEN 'A'
+      WHEN type IN ('AIS.18','AIS.19') THEN 'B'
+      ELSE NULL
+     END
+    ) as class
+  FROM
+    `{{  pipeline_table  }}`
+  WHERE
+    # Look back one day
+    DATE(date) >= yesterday() AND DATE(date) <= today()
+    AND ssvid IN (SELECT ssvid FROM events)
+    AND seg_id IN (
+      SELECT
+        seg_id
+      FROM
+        `{{  segs_table }}`
+      WHERE
+        good_seg
+        AND NOT overlapping_and_short) 
+),
+
+  /*
+  Calculate the number of position messages in the
+  12 hours before gap start. Include all positions
+  as well as a breakdown by satellite and terrestrial.
+  */
+  twelve_hours_before AS (
+  SELECT
+    ssvid,
+    off_timestamp,
+    COUNT(*) positions_12_hours_before,
+    SUM(IF(receiver_type = 'terrestrial', 1,0)) as positions_12_hours_before_ter,
+    SUM(IF(receiver_type = 'satellite', 1,0)) as positions_12_hours_before_sat
+  FROM
+    events
+  JOIN
+    legit_position_messages
+  USING
+    (ssvid)
+  WHERE
+    timestamp BETWEEN TIMESTAMP_SUB(off_timestamp, INTERVAL 12 hour) AND off_timestamp
+  GROUP BY
+    ssvid,
+    off_timestamp
+)
+{% endif %}
+
+/*
+Add EEZ ISO3 and return final event table,
+joining with twelve_hours_before if off events.
+*/
+SELECT
+  * EXCEPT(eez_id, {{event}}_eez, sovereign1_iso3),
+  sovereign1_iso3 as {{event}}_eez
+FROM events a
+LEFT JOIN (
+  SELECT
+    eez_id,
+    sovereign1_iso3
+  FROM `gfw_research.eez_info`
+  ) b
+ON(a.{{event}}_eez = CAST(b.eez_id AS STRING))
+{% if event == 'off' %}
+LEFT JOIN
+twelve_hours_before
+USING (ssvid, off_timestamp)
+{% endif %}
+
