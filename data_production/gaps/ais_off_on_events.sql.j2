@@ -61,9 +61,9 @@ WITH
   FROM
       `{{  pipeline_table  }}`
   {% if event == 'off' %}
-  WHERE DATE(date) >= today() AND DATE(date) <= tomorrow()
+  WHERE DATE(_partitiontime) >= today() AND DATE(_partitiontime) <= tomorrow()
   {% elif event == 'on' %}
-  WHERE DATE(date) <= today() AND DATE(date) >= yesterday()
+  WHERE DATE(_partitiontime) <= today() AND DATE(_partitiontime) >= yesterday()
   {% endif %}
   AND seg_id IN (
   SELECT
@@ -176,7 +176,7 @@ WITH
     `{{  pipeline_table  }}`
   WHERE
     # Look back one day
-    DATE(date) >= yesterday() AND DATE(date) <= today()
+    DATE(_partitiontime) >= yesterday() AND DATE(_partitiontime) <= today()
     AND ssvid IN (SELECT ssvid FROM events)
     AND seg_id IN (
       SELECT

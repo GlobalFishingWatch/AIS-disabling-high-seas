@@ -1,9 +1,9 @@
-################################################################################
-## Project: Catena AIS Gaps
-## Script purpose: Generate gridded loitering events 
-## By: Tyler Clavelle
-## Date: 2019-12-18
-################################################################################
+# ###############################################################################
+# # Project: Catena AIS Gaps
+# # Script purpose: Generate gridded loitering events 
+# # By: Tyler Clavelle
+# # Date: 2019-12-18
+# ###############################################################################
 
 
 # Loitering events function -----------------------------------------------
@@ -219,12 +219,12 @@ if(print_query) { return(loiter_q) }
 #   coord_sf(crs = gfw_projections('Equal Earth')$proj) +
 #   labs(title = glue::glue('Loitering hours between 2017-2019'),
 #        fill = 'Loitering hours')
-# 
+#
 # # Save figure
 # ggsave(filename = here::here('figures', glue::glue('loitering_hours_2017_to_2019.png')),
 #        width = 6,
 #        height = 4)
-# 
+#
 # # Save loitering data
 # write_csv(loiter_df, 
 #           path = here::here('data', glue::glue('loitering_2017_to_2019_v20200904.csv')))
