@@ -192,8 +192,14 @@
 	},
 	{
 		"mode": "NULLABLE",
+		"name": "gap_model_score",
+		"type": "FLOAT",
+		"description": "the gap model score is a feature used to identify suspected AIS disabling events. It is a metric of the vessel ping rate over 48 hours, calculated as the number of satellite positions in the previous 12 hours times the length of the gap (capped at 48 hours) divided by 12"
+	},
+	{
+		"mode": "NULLABLE",
 		"name": "is_closed",
-		"type": "INTEGER",
+		"type": "BOOLEAN",
 		"description": "1 if the gap is closed, 0 if the gap is open"
 	}
 ]

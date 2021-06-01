@@ -36,7 +36,12 @@ from dateutil.relativedelta import relativedelta
 import time
 from google.cloud import bigquery
 from jinja2 import Template
+
 import pyseas
+import pyseas.maps
+import pyseas.maps.rasters
+import pyseas.styles
+import pyseas.cm
 
 # project specific functions
 import utils 
@@ -45,7 +50,7 @@ import utils
 # %autoreload 2
 
 # BigQuery client
-# client = bigquery.Client()
+client = bigquery.Client()
 # -
 
 # ### Inputs & Parameters
@@ -54,7 +59,7 @@ import utils
 # Input BQ datasets/tables
 gfw_research = 'gfw_research'
 gfw_research_precursors = 'gfw_research_precursors'
-destination_dataset = 'scratch_tyler''
+destination_dataset = 'scratch_tyler'
 
 pipeline_version = 'v20201001'
 pipeline_table = 'pipe_{}'.format(pipeline_version)
@@ -62,11 +67,15 @@ segs_table = 'pipe_{}_segs'.format(pipeline_version)
 vi_version = 'v20210301'
 
 # Output tables version
-output_version = 'v20210429'
+output_version = 'v20210525'
+create_tables = True
 
 # Date range
 start_date = date(2017, 1, 1)
-end_date = date(2017, 1, 31)
+end_date = date(2021,5, 23)
+
+# Min gap hours
+min_gap_hours = 6
 # -
 
 # Generate list of dates to produce for analysis.
@@ -93,14 +102,13 @@ off_events_table = 'ais_off_events_{}'.format(output_version)
 on_events_table = 'ais_on_events_{}'.format(output_version)
 gap_events_table = 'ais_gap_events_{}'.format(output_version)
 
-# Create tables.
+# Create tables for off/on events.
 
-# Off events
-utils.make_bq_partitioned_table(destination_dataset, off_events_table)
-# On events
-utils.make_bq_partitioned_table(destination_dataset, on_events_table)
-# Gap events
-utils.make_bq_partitioned_table(destination_dataset, gap_events_table)
+if create_tables:
+    # Off events
+    utils.make_bq_partitioned_table(destination_dataset, off_events_table)
+    # On events
+    utils.make_bq_partitioned_table(destination_dataset, on_events_table)
 
 # ### Off events
 #
@@ -113,10 +121,14 @@ for t in tp:
                                 segs_table="{}.{}".format("gfw_research", segs_table),
                                 event_type='off',
                                 date = t,
-                                min_gap_hours=12, 
+                                min_gap_hours = min_gap_hours, 
                                 precursors_dataset=destination_dataset,
                                 destination_table=off_events_table)
     cmds.append(cmd)
+
+# test query
+# test_cmd = cmds[0].split('|')[0]
+os.system(cmds[0])
 
 # Run queries
 utils.execute_commands_in_parallel(commands=cmds)
@@ -132,10 +144,16 @@ for t in tp:
                                 segs_table="{}.{}".format("gfw_research", segs_table),
                                 event_type='on',
                                 date = t,
-                                min_gap_hours=12, 
+                                min_gap_hours = min_gap_hours, 
                                 precursors_dataset=destination_dataset,
                                 destination_table=on_events_table)
     on_cmds.append(cmd)
+
+# +
+# test query
+# test_cmd = on_cmds[0].split('|')[0]
+# os.system(test_cmd)
+# -
 
 # Run queries
 utils.execute_commands_in_parallel(commands=on_cmds)
@@ -143,6 +161,15 @@ utils.execute_commands_in_parallel(commands=on_cmds)
 # ### Gap events
 #
 # Combine off and on events into gap events.
+#
+# Create gap events table, partitioning on the `gap_start` field.
+
+if create_tables:
+    gap_tbl_cmd = "bq mk --schema=gaps/ais_gap_events.json \
+    --time_partitioning_field=gap_start \
+    --time_partitioning_type=DAY {}.{}".format(destination_dataset, 
+                                               gap_events_table)
+    os.system(gap_tbl_cmd)
 
 latest_date = tp[-1]
 gap_cmd = utils.make_ais_gap_events_table(off_events_table = off_events_table,
@@ -151,6 +178,12 @@ gap_cmd = utils.make_ais_gap_events_table(off_events_table = off_events_table,
                                 precursors_dataset = destination_dataset,
                                 destination_dataset = destination_dataset,
                                 destination_table = gap_events_table)
+
+# +
+# test query
+# test_cmd = gap_cmd.split('|')[0]
+# os.system(test_cmd)
+# -
 
 # Run command
 os.system(gap_cmd)
@@ -161,22 +194,30 @@ os.system(gap_cmd)
 # - AIS reception
 # - Time lost to gaps
 #
+# > The original reception quality method used a slightly different interpolation [query](https://github.com/GlobalFishingWatch/ais-gaps-and-reception/blob/master/data-production/hourly_interpoloation_v20191120.sql.j2)/table (`gfw_research_precursors.ais_positions_byssvid_hourly_v20191118`) than the [query](https://github.com/GlobalFishingWatch/ais-gaps-and-reception/blob/master/data-production/pipe-interpolation/hourly_interpoloation_v20201027.sql.j2) used to estimate time lost to gaps. These approaches have been combined/streamlined into the `interpolation/hourly_interpolation_byseg.sql.j2` in this repo.
+#
 # ### Create tables
 #
 # First create empty date partitioned tables to store interpolated positions.
 
+# +
 # Destination tables
 ais_positions_hourly = 'ais_positions_byssvid_hourly_{}'.format(output_version)
 ais_positions_hourly_fishing = 'ais_positions_byssvid_hourly_fishing_{}'.format(output_version)
 gap_positions_hourly = 'gap_positions_byssvid_hourly_{}'.format(output_version)
 loitering_positions_hourly = 'loitering_positions_byssvid_hourly_{}'.format(output_version)
 
-# all positions hourly
-utils.make_bq_partitioned_table(destination_dataset, ais_positions_hourly)
-# fishing vessel positions hourly
-utils.make_bq_partitioned_table(destination_dataset, ais_positions_hourly_fishing)
-# gap positions hourly
-utils.make_bq_partitioned_table(destination_dataset, gap_positions_hourly)
+# By seg_id
+ais_positions_hourly = 'ais_positions_byseg_hourly_{}'.format(output_version)
+# -
+
+if create_tables:
+    # all positions hourly
+    utils.make_bq_partitioned_table(destination_dataset, ais_positions_hourly)
+    # fishing vessel positions hourly
+    utils.make_bq_partitioned_table(destination_dataset, ais_positions_hourly_fishing)
+    # gap positions hourly
+    utils.make_bq_partitioned_table(destination_dataset, gap_positions_hourly)
 
 # ### Interpolate all vessel positions
 #
@@ -191,5 +232,85 @@ for t in tp:
     int_cmds.append(cmd)
 
 utils.execute_commands_in_parallel(int_cmds)
+
+# ### Interpolate fishing vessel positions
+# Interpolate positions for fishing vessels, including both `nnet_score` and `night_loitering` for determining when `squid_jiggers` are fishing.
+#
+# TODO: Update this to the same logic as for all vessels.
+
+# +
+# Store commands
+# int_fishing_cmds = []
+# for t in tp:
+#     cmd = utils.make_hourly_fishing_interpolation_table(date = t,
+#                                                 destination_dataset = destination_dataset,
+#                                                 destination_table = ais_positions_hourly_fishing)
+#     int_fishing_cmds.append(cmd)
+
+# +
+# utils.execute_commands_in_parallel(int_fishing_cmds)
+# -
+
+# ### Interpolate positions during AIS gap events
+#
+# > **Note:** Interpolating positions between gap events was originally done using the `raw_gaps_vYYYYMMDD` table, which included the gaps with additional parameters applied to them - e.g. `pos_x_hours_before`. Need to produce a version of this table or interpolate the gap events as is.
+
+# ## AIS Reception Quality
+#
+# Model AIS satellite reception quality to identify regions where AIS gap events are more/less suspicious. This is produced using the following process:
+#
+# **1. Calculate measured reception** - Calculates measured reception quality by AIS Class as the average number of positions received by a vessel in a day per one-degree grid cell
+#
+# **2. Interpolate reception** - To produce global maps of reception quality (e.g. not just in cells with AIS data) use a smoothing function to interpolate reception quality. 
+#
+# ### Create tables
+
+sat_reception_measured = 'sat_reception_measured_one_degree_{}'.format(output_version)
+sat_reception_smoothed = 'sat_reception_smoothed_one_degree_{}'.format(output_version)
+
+if create_tables:
+    # measured reception quality
+    utils.make_bq_partitioned_table(destination_dataset, sat_reception_measured)
+    # smoothed reception quality
+    utils.make_bq_partitioned_table(destination_dataset, sat_reception_smoothed)
+
+# ### Measured reception quality
+
+# Make list of month start dates for reception quality
+reception_dates = pd.date_range(start_date, end_date, freq='1M') - pd.offsets.MonthBegin(1)
+
+# Generate commands
+mr_cmds = []
+for r in reception_dates:
+    print(str(r.date()))
+    cmd = utils.make_reception_measured_table(destination_table = sat_reception_measured, 
+                                        destination_dataset = destination_dataset,
+                                        start_date = r, 
+                                        vi_version = vi_version, 
+                                        segs_table="{}.{}".format("gfw_research", segs_table),
+                                        output_version = output_version)
+
+    mr_cmds.append(cmd)
+
+utils.execute_commands_in_parallel(mr_cmds)
+
+# ### Smoothed reception quality
+#
+# Next, interpolate the measured reception quality using a radial basis function. 
+
+for r in reception_dates:
+    print(str(r.date()))
+    utils.make_smooth_reception_table(start_date = r,
+                                      reception_measured_table = sat_reception_measured,
+                                      destination_dataset = destination_dataset,
+                                      destination_table = sat_reception_smoothed)
+
+# #### Plot reception quality
+
+for r in reception_dates:
+    print(str(r.date()))
+    utils.plot_reception_quality(reception_start_date = r,
+                           destination_dataset = destination_dataset,
+                           reception_smoothed_table = sat_reception_smoothed)
 
 

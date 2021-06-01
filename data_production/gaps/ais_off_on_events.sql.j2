@@ -115,7 +115,7 @@ WITH
     receiver_type as {{event}}_receiver_type,
     distance_from_shore_m as {{event}}_distance_from_shore_m,
     distance_from_port_m as {{event}}_distance_from_port_m,
-    regions.eez[SAFE_ORDINAL(1)] as {{event}}_eez,
+    regions.eez[SAFE_ORDINAL(1)] as {{event}}_eez_id,
     ARRAY_TO_STRING(regions.rfmo, ", ") as {{event}}_rfmo
   FROM
     source_table
@@ -219,17 +219,8 @@ Add EEZ ISO3 and return final event table,
 joining with twelve_hours_before if off events.
 */
 SELECT
-  * EXCEPT(eez_id, {{event}}_eez, sovereign1_iso3),
-  sovereign1_iso3 as {{event}}_eez
-FROM events a
-LEFT JOIN (
-  SELECT
-    eez_id,
-    sovereign1_iso3
-  FROM `gfw_research.eez_info`
-  ) b
-ON(a.{{event}}_eez = CAST(b.eez_id AS STRING))
-{% if event == 'off' %}
+  * 
+FROM events {% if event == 'off' %} a
 LEFT JOIN
 twelve_hours_before
 USING (ssvid, off_timestamp)

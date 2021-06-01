@@ -1,7 +1,37 @@
 # utils.py
 
+import pandas as pd
+import numpy as np
 import os
 from datetime import datetime, timedelta, date
+from dateutil.relativedelta import relativedelta
+
+import scipy
+import scipy.interpolate
+
+import pyseas
+import pyseas.maps
+import pyseas.maps.rasters
+import pyseas.styles
+import pyseas.cm
+
+from google.cloud import bigquery
+# Establish BigQuery connection
+client = bigquery.Client()
+
+"""
+General parameters
+"""
+# Min/Max coordinates 
+min_lon, min_lat, max_lon, max_lat  = -180, -90, 180, 90
+
+# Number of lat/lon bins
+inverse_delta_degrees = 1
+n_lat = (max_lat - min_lat) * inverse_delta_degrees
+n_lon = (max_lon - min_lon) * inverse_delta_degrees
+
+lons = np.arange(min_lon, max_lon+1)
+lats = np.arange(min_lat, max_lat+1)
 
 def execute_commands_in_parallel(commands):
     '''This takes a list of commands and runs them in parallel
@@ -56,7 +86,8 @@ def already_processed(dataset = "gfw_research",
     return list(ap)
 
 # Create empty date partitioned BQ table
-def make_bq_partitioned_table(dataset, table):
+def make_bq_partitioned_table(dataset, 
+                              table):
     cmd = "bq mk --time_partitioning_type=DAY {}.{}".format(dataset, table)
     os.system(cmd)
 
@@ -122,7 +153,7 @@ def make_ais_gap_events_table(off_events_table,
 #
 # Interpolation functions
 #
-####################################
+# ###################################
 
 def make_hourly_interpolation_table(destination_table,
                                     destination_dataset,
@@ -135,7 +166,28 @@ def make_hourly_interpolation_table(destination_table,
     YYYY_MM_DD = date[:4] + "-" + date[4:6] + "-" + date[6:8]
     
     # Format command
-    cmd = '''jinja2 interpolation/hourly_interpolation.sql.j2    \
+    cmd = '''jinja2 interpolation/hourly_interpolation_byseg.sql.j2    \
+       -D YYYY_MM_DD="{YYYY_MM_DD}" \
+       | \
+        bq query --replace \
+        --destination_table={destination_dataset}.{destination_table}\
+         --allow_large_results --use_legacy_sql=false '''.format(YYYY_MM_DD = date,
+                                                                 destination_dataset=destination_dataset,
+                                                                 destination_table=destination_table)
+    return cmd
+
+def make_hourly_fishing_interpolation_table(destination_table,
+                                            destination_dataset,
+                                            date):
+
+    # Update partition of destination table
+    destination_table = destination_table + "\$" + date.replace('-','')
+    
+    # Set date as YYYY-MM-DD format
+    YYYY_MM_DD = date[:4] + "-" + date[4:6] + "-" + date[6:8]
+    
+    # Format command
+    cmd = '''jinja2 interpolation/hourly_fishing_interpolation.sql.j2    \
        -D YYYY_MM_DD="{YYYY_MM_DD}" \
        | \
         bq query --replace \
@@ -149,7 +201,7 @@ def make_hourly_interpolation_table(destination_table,
 #
 # Reception functions
 #
-####################################
+# ###################################
 
 def make_grids(df, names):
     """
@@ -180,6 +232,44 @@ def make_grids(df, names):
         for k in names:
             grids[k][lat_ndx][lon_ndx] = getattr(row, k)
     return A_grids, B_grids
+
+# Reception measured function
+def make_reception_measured_table(destination_table,
+                                  destination_dataset,
+                                  start_date,
+                                  vi_version,
+                                  segs_table,
+                                  output_version):
+    
+    # Set end date to end of month of start date
+    reception_start = str(start_date.date())
+    # End date (not inclusive)
+    reception_end = start_date + relativedelta(months=1)
+    reception_end = str(reception_end.date())
+    
+    # Format date string without dashes for partition
+    # Use start of month as partition date
+    destination_table = destination_table + "\$"+ reception_start.replace("-","")
+
+    # Format command
+    cmd = '''jinja2 reception/reception_measured.sql.j2    \
+       -D start_date="{start_date}" \
+       -D end_date="{end_date}" \
+       -D vi_version="{vi_version}" \
+       -D segs_table="{segs_table}" \
+       -D destination_dataset="{destination_dataset}" \
+       -D output_version="{output_version}" \
+       | \
+        bq query --replace \
+        --destination_table={destination_dataset}.{destination_table} \
+         --allow_large_results --use_legacy_sql=false'''.format(start_date = reception_start,
+                                                                end_date = reception_end,
+                                                                destination_dataset=destination_dataset,
+                                                                destination_table=destination_table,
+                                                                vi_version = vi_version,
+                                                                segs_table = segs_table,
+                                                                output_version = output_version)
+    return cmd
 
 # Reception interpolation function
 def interpolate_reception(y, hours, hours_cap=15, elevation_scale=10, 
@@ -243,3 +333,164 @@ def interpolate_reception(y, hours, hours_cap=15, elevation_scale=10,
     
     return interpolater(lonvec.flatten(), latvec.flatten(), 
                                     np.zeros_like(lonvec.flatten())).reshape(180, 360)
+
+#
+# Create smooth reception table 
+#
+def make_smooth_reception_table(start_date,
+                                reception_measured_table,
+                                destination_dataset,
+                                destination_table):
+    
+    """
+    Generate smooth reception map for month
+    """
+    # Dates for reception map 
+    reception_start = start_date
+    # End date (not inclusive)
+    reception_end = start_date + relativedelta(months=1)
+
+    ### Measured reception ###
+    # Query to calculate measured reception
+    print("Querying reception for {}".format(reception_start))
+    
+    month_reception_query = '''SELECT * 
+                               FROM `{d}.{t}`
+                               WHERE _partitiontime = "{m}"'''.format(d = destination_dataset,
+                                                                    t = reception_measured_table,
+                                                                    m = str(reception_start.date()))
+            
+    month_reception = pd.read_gbq(month_reception_query, project_id='world-fishing-827', dialect='standard')
+    
+    # Generate Class A and B grids from ping_density query results
+    A_grids, B_grids = make_grids(month_reception, ['sat_pos_per_day', 'hours'])
+
+    ### Interpolated reception ###
+    print("Interpolating reception for {}".format(reception_start))
+    # Interpolate reception for Class A
+    smoothed_A_reception = interpolate_reception(A_grids['sat_pos_per_day'], A_grids['hours'])
+    # Interpolate reception for Class A
+    smoothed_B_reception = interpolate_reception(B_grids['sat_pos_per_day'], B_grids['hours'])    
+    
+    """
+    Convert data to pandas data frame and upload to BigQuery
+    """
+    # Empty list to store coordinates and values
+    data_A = []
+    data_B = []
+
+    # Loop over lat/lon and fill with positions per hour
+    for lat in range(n_lat):
+        for lon in range(n_lon):
+            # Add data to each list
+            data_A.append([lats[lat], lons[lon], smoothed_A_reception[lat][lon]])
+            data_B.append([lats[lat], lons[lon], smoothed_B_reception[lat][lon]])
+
+    # Convert lists to pandas dataframes
+    df_A = pd.DataFrame(data_A, columns=['lat_bin','lon_bin','positions_per_day'])
+    df_A['class'] = 'A'
+
+    df_B = pd.DataFrame(data_B, columns=['lat_bin','lon_bin','positions_per_day'])
+    df_B['class'] = 'B'
+
+    # Stack dataframes into single table
+    df = pd.concat([df_A, df_B], axis = 0).reset_index(drop=True)
+
+    # Add column for year and month
+    df['year'] = reception_start.year
+    df['month'] = reception_start.month
+
+    # Rearrange columns
+    df = df[['year','month','lat_bin','lon_bin','class','positions_per_day']]
+
+    # Set index to remove index colum
+    df = df.set_index('year')
+
+    # Save data to tmp csv file
+    df.to_csv('tmp.csv')
+
+    """
+    Upload to BigQuery
+    """
+    # BigQuery references
+    dataset_ref = client.dataset(destination_dataset)
+    table_ref = dataset_ref.table(destination_table)
+    
+    job_config = bigquery.LoadJobConfig()
+    job_config.source_format = bigquery.SourceFormat.CSV
+    job_config.skip_leading_rows = 1
+    job_config.autodetect = True
+
+    with open("tmp.csv", "rb") as source_file:
+        job = client.load_table_from_file(source_file, table_ref, job_config=job_config)
+
+    job.result()  # Waits for table load to complete.
+
+    print("Loaded {} rows for {} into {}.{}".format(job.output_rows, reception_start, 
+                                                    destination_dataset, destination_table))
+
+# Plot reception quality
+def plot_reception_quality(reception_start_date,
+                           destination_dataset,
+                           reception_smoothed_table):
+    """
+    Query smoothed reception data
+    """
+    month_reception_query = '''SELECT * 
+                               FROM `{d}.{t}`
+                               WHERE _partitiontime = "{m}"'''.format(d = destination_dataset,
+                                                                      t = reception_smoothed_table,
+                                                                      m = str(reception_start.date()))
+    
+    # Query data
+    month_reception = pd.read_gbq(month_reception_query, project_id='world-fishing-827', dialect='standard')
+    
+    # remove NaNs
+    df = month_reception.dropna(subset=['lat_bin','lon_bin'])
+
+    # Class A
+    class_a_reception = pyseas.maps.rasters.df2raster(df[df.cls == 'A'], 
+                                                      'lon_bin', 'lat_bin','sat_pos_per_day',
+                                                      xyscale=1, 
+                                                      per_km2=False)
+
+    # Class B
+    class_b_reception = pyseas.maps.rasters.df2raster(df[df.cls == 'B'], 
+                                                      'lon_bin', 'lat_bin','sat_pos_per_day',
+                                                      xyscale=1, 
+                                                      per_km2=False)
+    """
+    Plot 
+    """
+    # Figure size (one panel plot)
+    fig = plt.figure(figsize=(5,5))
+
+    titles = ["Class A",
+              "Class B"]
+
+    with pyseas.context(pyseas.styles.light): 
+
+        fig_min_value = 1
+        fig_max_value = 400  
+
+        # Class A
+        grid = class_a_reception
+        grid[grid<fig_min_value/fig_max_value]=np.nan
+        norm = colors.LogNorm(vmin=fig_min_value, vmax=fig_max_value)
+
+        ax, im = pyseas.maps.plot_raster(grid,
+                                         cmap = 'reception',
+                                         norm = norm)
+
+        ax.set_title("Class A")
+        
+        cbar = fig.colorbar(im, ax=ax,
+                  orientation='horizontal',
+                  fraction=0.02,
+                  aspect=60,
+                  pad=0.02,
+                 )
+    
+        cbar.set_label("Satellite AIS positions per day")
+        plt.tight_layout(pad=0.5)
+    
