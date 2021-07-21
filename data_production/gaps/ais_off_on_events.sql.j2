@@ -47,6 +47,7 @@ WITH
   source_table AS (
   SELECT
     ssvid,
+    seg_id,
     msgid,
     timestamp,
     lat,
@@ -90,6 +91,7 @@ WITH
   positions AS (
   SELECT
     ssvid,
+    seg_id as {{event}}_seg_id,
     msgid as {{event}}_msgid,
     timestamp as {{event}}_timestamp,
     /* LAG/LEAD depending on event type */
@@ -115,7 +117,8 @@ WITH
     receiver_type as {{event}}_receiver_type,
     distance_from_shore_m as {{event}}_distance_from_shore_m,
     distance_from_port_m as {{event}}_distance_from_port_m,
-    regions.eez[SAFE_ORDINAL(1)] as {{event}}_eez_id,
+    regions.eez as {{event}}_eez_id,
+    #regions.eez[SAFE_ORDINAL(1)] as {{event}}_eez_id,
     ARRAY_TO_STRING(regions.rfmo, ", ") as {{event}}_rfmo
   FROM
     source_table
@@ -185,7 +188,7 @@ WITH
         `{{  segs_table }}`
       WHERE
         good_seg
-        AND NOT overlapping_and_short) 
+        AND NOT overlapping_and_short)
 ),
 
   /*
@@ -215,14 +218,13 @@ WITH
 {% endif %}
 
 /*
-Add EEZ ISO3 and return final event table,
+Return final event table,
 joining with twelve_hours_before if off events.
 */
 SELECT
-  * 
+  *
 FROM events {% if event == 'off' %} a
 LEFT JOIN
 twelve_hours_before
 USING (ssvid, off_timestamp)
 {% endif %}
-

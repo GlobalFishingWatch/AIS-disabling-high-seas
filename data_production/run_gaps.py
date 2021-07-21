@@ -64,15 +64,15 @@ destination_dataset = 'scratch_tyler'
 pipeline_version = 'v20201001'
 pipeline_table = 'pipe_{}'.format(pipeline_version)
 segs_table = 'pipe_{}_segs'.format(pipeline_version)
-vi_version = 'v20210301'
+vi_version = 'v20210706'
 
 # Output tables version
-output_version = 'v20210525'
+output_version = 'v20210721'
 create_tables = True
 
 # Date range
-start_date = date(2017, 1, 1)
-end_date = date(2021,5, 23)
+start_date = date(2017,1, 1)
+end_date = date(2017,1, 4)
 
 # Min gap hours
 min_gap_hours = 6
@@ -126,9 +126,12 @@ for t in tp:
                                 destination_table=off_events_table)
     cmds.append(cmd)
 
+# +
 # test query
 # test_cmd = cmds[0].split('|')[0]
-os.system(cmds[0])
+# os.system(test_cmd)
+# os.system(cmds[0])
+# -
 
 # Run queries
 utils.execute_commands_in_parallel(commands=cmds)
@@ -183,10 +186,15 @@ gap_cmd = utils.make_ais_gap_events_table(off_events_table = off_events_table,
 # test query
 # test_cmd = gap_cmd.split('|')[0]
 # os.system(test_cmd)
+# os.system(test_cmd)
 # -
 
 # Run command
 os.system(gap_cmd)
+
+# Update schema
+gap_schema_cmd = "bq update --schema=gaps/ais_gap_events.json {}.{}".format(destination_dataset, gap_events_table)
+os.system(gap_schema_cmd)
 
 # ## AIS Interpolation
 #
