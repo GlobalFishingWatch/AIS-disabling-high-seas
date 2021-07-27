@@ -64,10 +64,11 @@ destination_dataset = 'scratch_tyler'
 pipeline_version = 'v20201001'
 pipeline_table = 'pipe_{}'.format(pipeline_version)
 segs_table = 'pipe_{}_segs'.format(pipeline_version)
-vi_version = 'v20210706'
+vi_version = 'v20210301'
+vd_version = 'v20210601'
 
 # Output tables version
-output_version = 'v20210721'
+output_version = 'v20210722'
 create_tables = True
 
 # Date range
@@ -86,7 +87,7 @@ tp = []
 for dt in dates_to_run:
     tp.append(dt.strftime("%Y-%m-%d"))
 
-# ## AIS Gaps dataset
+# # AIS Gaps dataset
 #
 # Generate a dataset of AIS gaps for time range. This involves running the following query sequence (queries in the `gaps` subdirectory):
 # 1. AIS off events: `ais_off_on_events.sql.j2` with `event` parameter set to `'off'`
@@ -196,7 +197,43 @@ os.system(gap_cmd)
 gap_schema_cmd = "bq update --schema=gaps/ais_gap_events.json {}.{}".format(destination_dataset, gap_events_table)
 os.system(gap_schema_cmd)
 
-# ## AIS Interpolation
+# ### Fishing vessel gaps
+#
+# Lastly, subset the `ais_gap_events_vYYYYMMDD` dataset to only include fishing vessels.
+#
+# **TODO** 
+
+# # Loitering
+# Produce datasets of loitering events and gridded loitering activity (at quarter degree) for use by the drivers of suspected disabling model.
+
+# Destination tables
+loitering_events_table = 'loitering_events_{}'.format(output_version)
+gridded_loitering_table = 'gridded_loitering_{}'.format(output_version)
+
+# ## Loitering events and gridded loitering
+#
+# Query all carrier loitering events between 2017-2019. This query does not exclude loitering events that have overlapping encounters under the assumption that carrier vessels having encounters could also be meeting non-broadcasting fishing vessels at the same time. 
+#
+# After extracting events, produce a gridded dataset of all loitering events at quarter degree resolution.
+
+loitering_cmd = utils.make_loitering_events_table(vd_version = vd_version,
+                                                  pipeline_version = pipeline_version,
+                                                  destination_dataset = destination_dataset,
+                                                  destination_table = loitering_events_table)
+
+# Run query
+if create_tables:
+    os.system(loitering_cmd)
+
+gridded_loitering_cmd = utils.make_gridded_loitering_table(destination_dataset = destination_dataset,
+                                                           output_version = output_version,
+                                                           destination_table = gridded_loitering_table)
+# gridded_loitering_cmd
+
+if create_tables:
+    os.system(gridded_loitering_cmd)
+
+# # AIS Interpolation
 #
 # The next step is to generate tables of interpolated vessel positions. These tables are used subsequently for the following:
 # - AIS reception

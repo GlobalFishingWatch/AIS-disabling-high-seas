@@ -1,0 +1,93 @@
+############################################################
+#
+# Query to generate loitering events between 2017-2019 for 
+# the suspected AIS disabling paper. 
+#
+############################################################
+
+#standardsql
+  WITH 
+  
+  #
+  # Get list of carrier vessels from the vessel database who
+  # were active between 2017-2019
+  #
+  carrier_vessels AS (
+  SELECT 
+   identity.ssvid AS carrier_ssvid,
+   first_timestamp AS carrier_first_timestamp,
+   last_timestamp AS carrier_last_timestamp
+  FROM
+  `world-fishing-827.vessel_database.all_vessels_{{ vd_version }}`
+  LEFT JOIN UNNEST(registry)
+  LEFT JOIN UNNEST(activity)
+  LEFT JOIN UNNEST(feature.geartype) as feature_gear
+  WHERE is_carrier 
+  AND confidence >= 3
+  AND identity.ssvid NOT IN ('111111111','0','888888888','416202700')
+  AND DATE(first_timestamp) <= '2019-12-31'
+  AND DATE(last_timestamp) >= '2017-01-01'
+  GROUP BY 1,2,3
+  ),
+  
+  #
+  # Get all loitering events for carrier vessels between 2017-2019
+  # Minimum loitering time >= 4 hours, avg speed <= 2 knots, and 
+  # average distance from shore >= 20 nm
+  #
+  loitering_events AS (
+  SELECT
+    ssvid,
+    ssvid as vessel_id,
+    loitering_start_timestamp,
+    loitering_end_timestamp,
+    loitering_hours,
+    tot_distance_nm,
+    avg_speed_knots,
+    avg_distance_from_shore_nm,
+    start_lon,
+    start_lat,
+    end_lon,
+    end_lat
+  FROM
+    `world-fishing-827.pipe_production_{{ pipeline_version }}.loitering`
+  WHERE ssvid IN (SELECT carrier_ssvid FROM carrier_vessels) 
+  AND loitering_start_timestamp >= timestamp('2017-01-01') 
+  AND loitering_end_timestamp <= timestamp('2019-12-31') 
+  AND loitering_hours >= 4 
+  AND avg_speed_knots <= 2 
+  AND avg_distance_from_shore_nm > 20 
+  AND seg_id IN (
+    SELECT
+      seg_id
+    FROM
+      `gfw_research.pipe_{{ pipeline_version }}_segs`
+    WHERE
+      good_seg
+      AND NOT overlapping_and_short )
+  GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12   
+  ),
+
+  #
+  # Restrict loitering events only to time-ranges where the carrier vessel was 
+  # broadcasting as a carrier
+  #
+  loitering_verified AS (
+    SELECT * 
+    FROM loitering_events a
+    JOIN (
+        SELECT
+        carrier_ssvid,
+        carrier_first_timestamp,
+        carrier_last_timestamp
+        FROM
+        carrier_vessels
+    ) b
+    ON
+        SAFE_CAST(a.vessel_id as STRING) = SAFE_CAST(b.carrier_ssvid as STRING)
+        AND a.loitering_start_timestamp BETWEEN b.carrier_first_timestamp AND b.carrier_last_timestamp
+        AND a.loitering_end_timestamp BETWEEN b.carrier_first_timestamp and b.carrier_last_timestamp
+  )
+
+# Return final loitering events dataset  
+SELECT * FROM loitering_verified 

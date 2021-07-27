@@ -151,6 +151,50 @@ def make_ais_gap_events_table(off_events_table,
 
 ####################################
 #
+# Loitering functions
+#
+# ###################################
+
+# Loitering events function
+def make_loitering_events_table(vd_version,
+                                pipeline_version,
+                                destination_dataset, 
+                                destination_table):
+        
+    # Format jinja2 command
+    cmd = """jinja2 loitering/loitering_events.sql.j2 \
+    -D vd_version="{vd_version}" \
+    -D pipeline_version="{pipeline_version}" \
+    | \
+    bq query --replace \
+    --destination_table={destination_dataset}.{destination_table}\
+    --allow_large_results --use_legacy_sql=false --max_rows=0
+    """.format(vd_version=vd_version,
+               pipeline_version=pipeline_version,
+               destination_dataset=destination_dataset,
+               destination_table=destination_table)
+    return cmd
+
+# Gridded loitering function
+def make_gridded_loitering_table(destination_dataset,
+                                 output_version,
+                                 destination_table):
+        
+    # Format jinja2 command
+    cmd = """jinja2 loitering/loitering_events_gridded.sql.j2 \
+    -D destination_dataset="{destination_dataset}" \
+    -D output_version="{output_version}" \
+    | \
+    bq query --replace \
+    --destination_table={destination_dataset}.{destination_table}\
+    --allow_large_results --use_legacy_sql=false --max_rows=0
+    """.format(output_version=output_version,
+               destination_dataset=destination_dataset,
+               destination_table=destination_table)
+    return cmd
+
+####################################
+#
 # Interpolation functions
 #
 # ###################################

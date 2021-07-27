@@ -8,7 +8,7 @@
   #
   loitering_events AS (
   SELECT *
-  FROM {{ destination_dataset }}.loitering_events_v{{ output_version }}),
+  FROM {{ destination_dataset }}.loitering_events_{{ output_version }}),
   
   #
   # Bin distinct loitering events to quarter degree
