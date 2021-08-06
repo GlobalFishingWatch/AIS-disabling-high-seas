@@ -1,5 +1,5 @@
 /*
-Generate aggregate vessel presence, fishing activity, and 
+Generate aggregate vessel presence, fishing activity, and
 number of fishing MMSI present per 0.25 degree grid cell
 over full time period of analysis.
 */
@@ -12,6 +12,33 @@ WITH
   SELECT *
   FROM gfw_research.fishing_vessels_ssvid_{{ vi_version }}
   ),
+
+  ############################################
+  # This subquery gets corrected squid jiggers
+  corrected_jiggers AS (
+  SELECT
+  ssvid,
+  year,
+  # Overwrite pole and line vessels as squid when registries say their squid
+  IF(best.registry_net_disagreement = 'squid_jigger,pole_and_line',
+     'squid_jigger', best.best_vessel_class) as vessel_class,
+  FROM `gfw_research.vi_ssvid_byyear_{{ vi_version }}`
+  WHERE best.registry_net_disagreement = 'squid_jigger,pole_and_line'
+  AND year BETWEEN 2017 AND 2019
+  ),
+
+############################################
+ # Override best_vessel_class for corrected squid jiggers
+ corrected_fishing_vessels AS (
+  SELECT
+  ssvid,
+  year,
+  best_flag,
+  IF(vessel_class IS NULL, best_vessel_class, vessel_class) as best_vessel_class
+  FROM fishing_vessels
+  LEFT JOIN corrected_jiggers
+  USING(ssvid, year)
+ ),
 
   ########################################
   # This subquery identifies good segments
@@ -112,7 +139,7 @@ WITH
   GROUP BY ssvid, vessel_class, flag, date, year, lat_bin, lon_bin, class
   ),
 
-  # Aggregate all data by 0.25 degree bin 
+  # Aggregate all data by 0.25 degree bin
   all_fishing_binned AS (
   SELECT
     CAST(lat_bin / 4 + 0.125 as NUMERIC) lat_bin,
@@ -130,5 +157,5 @@ WITH
   )
 
 # Return binned data
-select * from all_fishing_binned  
+select * from all_fishing_binned
 order by lat_bin, lon_bin, vessel_class, flag, class

@@ -8,6 +8,8 @@ from dateutil.relativedelta import relativedelta
 
 import scipy
 import scipy.interpolate
+import matplotlib.pyplot as plt
+from matplotlib import colors,colorbar, cm
 
 import pyseas
 import pyseas.maps
@@ -149,6 +151,36 @@ def make_ais_gap_events_table(off_events_table,
                destination_table=destination_table)
     return cmd
 
+# Gap events and model features function
+def make_ais_gap_events_features_table(pipeline_version,
+                                       vi_version,
+                                       output_version,
+                                       start_date,
+                                       end_date,
+                                       destination_dataset,
+                                       destination_table):
+        
+    # Format jinja2 command
+    cmd = """jinja2 gaps/ais_gap_events_features.sql.j2 \
+    -D pipe_version="{pipeline_version}" \
+    -D vi_version="{vi_version}" \
+    -D output_version="{output_version}" \
+    -D start_date="{start_date}" \
+    -D end_date="{end_date}" \
+    -D destination_dataset="{destination_dataset}" \
+    | \
+    bq query --replace \
+    --destination_table={destination_dataset}.{destination_table}\
+    --allow_large_results --use_legacy_sql=false --max_rows=0
+    """.format(pipeline_version=pipeline_version,
+               vi_version=vi_version,
+               output_version=output_version,
+               start_date=start_date,
+               end_date=end_date,
+               destination_dataset=destination_dataset,
+               destination_table=destination_table)
+    return cmd
+
 ####################################
 #
 # Loitering functions
@@ -190,6 +222,36 @@ def make_gridded_loitering_table(destination_dataset,
     --allow_large_results --use_legacy_sql=false --max_rows=0
     """.format(output_version=output_version,
                destination_dataset=destination_dataset,
+               destination_table=destination_table)
+    return cmd
+
+####################################
+#
+# Fishing functions
+#
+# ###################################
+
+# Gridded fishing effort function
+def make_gridded_fishing_table(destination_dataset,
+                               output_version,
+                               pipeline_version,
+                               vi_version,
+                               destination_table):
+        
+    # Format jinja2 command
+    cmd = """jinja2 fishing/fishing_gridded.sql.j2 \
+    -D destination_dataset="{destination_dataset}" \
+    -D pipeline_version="{pipeline_version}" \
+    -D vi_version="{vi_version}" \
+    -D output_version="{output_version}" \
+    | \
+    bq query --replace \
+    --destination_table={destination_dataset}.{destination_table}\
+    --allow_large_results --use_legacy_sql=false --max_rows=0
+    """.format(output_version=output_version,
+               destination_dataset=destination_dataset,
+               pipeline_version=pipeline_version,
+               vi_version=vi_version,
                destination_table=destination_table)
     return cmd
 
@@ -456,77 +518,88 @@ def make_smooth_reception_table(start_date,
     """
     Upload to BigQuery
     """
-    # BigQuery references
-    dataset_ref = client.dataset(destination_dataset)
-    table_ref = dataset_ref.table(destination_table)
-    
-    job_config = bigquery.LoadJobConfig()
-    job_config.source_format = bigquery.SourceFormat.CSV
-    job_config.skip_leading_rows = 1
-    job_config.autodetect = True
+
+    # Format date string without dashes for partition
+    # Use start of month as partition date
+    dest_table_partition = str(start_date.date())
+    dest_table_partition = destination_table + "\$"+ dest_table_partition.replace("-","")
 
     with open("tmp.csv", "rb") as source_file:
-        job = client.load_table_from_file(source_file, table_ref, job_config=job_config)
+        bq_load_cmd = """bq load \
+        --source_format=CSV \
+        --autodetect \
+        --skip_leading_rows=1 \
+        "{d}.{t}" tmp.csv""".format(d = destination_dataset,t = dest_table_partition)
+        
+        os.system(bq_load_cmd)
 
-    job.result()  # Waits for table load to complete.
-
-    print("Loaded {} rows for {} into {}.{}".format(job.output_rows, reception_start, 
-                                                    destination_dataset, destination_table))
+    print("Loaded data for {} into {}.{}".format(reception_start, 
+                                                 destination_dataset, 
+                                                 dest_table_partition))
 
 # Plot reception quality
 def plot_reception_quality(reception_start_date,
                            destination_dataset,
-                           reception_smoothed_table):
-    """
-    Query smoothed reception data
-    """
-    month_reception_query = '''SELECT * 
-                               FROM `{d}.{t}`
-                               WHERE _partitiontime = "{m}"'''.format(d = destination_dataset,
-                                                                      t = reception_smoothed_table,
-                                                                      m = str(reception_start.date()))
-    
-    # Query data
-    month_reception = pd.read_gbq(month_reception_query, project_id='world-fishing-827', dialect='standard')
+                           reception_smoothed_table,
+                           reception_df):
     
     # remove NaNs
-    df = month_reception.dropna(subset=['lat_bin','lon_bin'])
+    df = reception_df.dropna(subset=['lat_bin','lon_bin'])
+    
 
     # Class A
-    class_a_reception = pyseas.maps.rasters.df2raster(df[df.cls == 'A'], 
-                                                      'lon_bin', 'lat_bin','sat_pos_per_day',
+    class_a_reception = pyseas.maps.rasters.df2raster(df[df['class'] == 'A'], 
+                                                      'lon_bin', 'lat_bin','positions_per_day',
                                                       xyscale=1, 
                                                       per_km2=False)
 
     # Class B
-    class_b_reception = pyseas.maps.rasters.df2raster(df[df.cls == 'B'], 
-                                                      'lon_bin', 'lat_bin','sat_pos_per_day',
+    class_b_reception = pyseas.maps.rasters.df2raster(df[df['class'] == 'B'], 
+                                                      'lon_bin', 'lat_bin','positions_per_day',
                                                       xyscale=1, 
                                                       per_km2=False)
     """
     Plot 
     """
     # Figure size (one panel plot)
-    fig = plt.figure(figsize=(5,5))
+    fig = plt.figure(figsize=(10,10))
 
-    titles = ["Class A",
-              "Class B"]
+    titles = ["Class A {}".format(reception_start_date.date()),
+              "Class B {}".format(reception_start_date.date())]
 
     with pyseas.context(pyseas.styles.light): 
 
+        axes = []
+        ims = []
         fig_min_value = 1
         fig_max_value = 400  
 
         # Class A
-        grid = class_a_reception
-        grid[grid<fig_min_value/fig_max_value]=np.nan
+        grid = np.maximum(class_a_reception, 1)
+        grid[grid<fig_min_value/fig_max_value]=100
         norm = colors.LogNorm(vmin=fig_min_value, vmax=fig_max_value)
 
         ax, im = pyseas.maps.plot_raster(grid,
+                                         subplot=(2,1,1),
                                          cmap = 'reception',
+                                         origin = 'upper',
                                          norm = norm)
 
-        ax.set_title("Class A")
+        ax.set_title(titles[0])
+        
+        # Class B
+        grid = np.maximum(class_b_reception, 1)
+        grid[grid<fig_min_value/fig_max_value]=100
+        norm = colors.LogNorm(vmin=fig_min_value, vmax=fig_max_value)
+
+        ax, im = pyseas.maps.plot_raster(grid,
+                                         subplot=(2,1,2),
+                                         cmap='reception',
+                                         origin = 'upper',
+                                         norm = norm
+                                        )
+        
+        ax.set_title(titles[1])
         
         cbar = fig.colorbar(im, ax=ax,
                   orientation='horizontal',

@@ -59,6 +59,7 @@ client = bigquery.Client()
 # Input BQ datasets/tables
 gfw_research = 'gfw_research'
 gfw_research_precursors = 'gfw_research_precursors'
+proj_dataset = 'proj_ais_gaps_catena'
 destination_dataset = 'scratch_tyler'
 
 pipeline_version = 'v20201001'
@@ -73,7 +74,7 @@ create_tables = True
 
 # Date range
 start_date = date(2017,1, 1)
-end_date = date(2017,1, 4)
+end_date = date(2020,12, 31)
 
 # Min gap hours
 min_gap_hours = 6
@@ -199,7 +200,11 @@ os.system(gap_schema_cmd)
 
 # ### Fishing vessel gaps
 #
-# Lastly, subset the `ais_gap_events_vYYYYMMDD` dataset to only include fishing vessels.
+# Lastly, create the final gaps model dataset by doing the following:
+#
+# + subset the `ais_gap_events_vYYYYMMDD` dataset to only include fishing vessels 
+# + Add additional model variables not calculated at the time of the gap events creation:
+#     + pos
 #
 # **TODO** 
 
@@ -233,6 +238,31 @@ gridded_loitering_cmd = utils.make_gridded_loitering_table(destination_dataset =
 if create_tables:
     os.system(gridded_loitering_cmd)
 
+# ## Fishing
+#
+# Produce dataset of gridded fishing effort (at quarter degree) for use by the drivers of suspected disabling model.
+
+# Destination tables
+fishing_table = 'gridded_fishing_{}'.format(output_version)
+
+fishing_cmd = utils.make_gridded_fishing_table(output_version = output_version,
+                                               pipeline_version = pipeline_version,
+                                               vi_version = vi_version,
+                                               destination_dataset = destination_dataset,
+                                               destination_table = fishing_table)
+
+# +
+# test query
+# test_cmd = fishing_cmd.split('|')[0]
+# test_cmd
+# os.system(test_cmd)
+# fishing_cmd
+# -
+
+# Run query
+if create_tables:
+    os.system(fishing_cmd)
+
 # # AIS Interpolation
 #
 # The next step is to generate tables of interpolated vessel positions. These tables are used subsequently for the following:
@@ -247,13 +277,13 @@ if create_tables:
 
 # +
 # Destination tables
-ais_positions_hourly = 'ais_positions_byssvid_hourly_{}'.format(output_version)
+# ais_positions_hourly = 'ais_positions_byssvid_hourly_{}'.format(output_version)
+# By seg_id
+ais_positions_hourly = 'ais_positions_byseg_hourly_{}'.format(output_version)
+
 ais_positions_hourly_fishing = 'ais_positions_byssvid_hourly_fishing_{}'.format(output_version)
 gap_positions_hourly = 'gap_positions_byssvid_hourly_{}'.format(output_version)
 loitering_positions_hourly = 'loitering_positions_byssvid_hourly_{}'.format(output_version)
-
-# By seg_id
-ais_positions_hourly = 'ais_positions_byseg_hourly_{}'.format(output_version)
 # -
 
 if create_tables:
@@ -323,11 +353,12 @@ if create_tables:
 
 # Make list of month start dates for reception quality
 reception_dates = pd.date_range(start_date, end_date, freq='1M') - pd.offsets.MonthBegin(1)
+# reception_dates
 
 # Generate commands
 mr_cmds = []
 for r in reception_dates:
-    print(str(r.date()))
+#     print(str(r.date()))
     cmd = utils.make_reception_measured_table(destination_table = sat_reception_measured, 
                                         destination_dataset = destination_dataset,
                                         start_date = r, 
@@ -350,12 +381,89 @@ for r in reception_dates:
                                       destination_dataset = destination_dataset,
                                       destination_table = sat_reception_smoothed)
 
-# #### Plot reception quality
+# ### Plot reception quality
+#
 
 for r in reception_dates:
     print(str(r.date()))
+    """
+    Query smoothed reception data
+    """
+    month_reception_query = '''SELECT *
+                               FROM `{d}.{t}`
+                               WHERE _partitiontime = "{m}"'''.format(d = destination_dataset,
+                                                                      t = sat_reception_smoothed,
+                                                                      m = str(r.date())
+                                                                     )
+    # Query data
+    month_reception = pd.read_gbq(month_reception_query, project_id='world-fishing-827', dialect='standard')
+    
     utils.plot_reception_quality(reception_start_date = r,
-                           destination_dataset = destination_dataset,
-                           reception_smoothed_table = sat_reception_smoothed)
+                                 destination_dataset = destination_dataset,
+                                 reception_smoothed_table = sat_reception_smoothed,
+                                 reception_df = month_reception
+                            )
+
+# Plot average reception quality across the full time series
+
+# +
+"""
+Query smoothed reception data
+"""
+month_reception_query = '''SELECT 
+                           lat_bin,
+                           lon_bin,
+                           class,
+                           AVG(positions_per_day) as positions_per_day
+                           FROM `{d}.{t}`
+                           WHERE _partitiontime BETWEEN "2017-01-01" 
+                           AND "2019-12-01"
+                           GROUP BY 1,2,3'''.format(d = destination_dataset,
+                                                      t = sat_reception_smoothed)
+# Query data
+month_reception = pd.read_gbq(month_reception_query, project_id='world-fishing-827', dialect='standard')
+
+utils.plot_reception_quality(reception_start_date = r,
+                             destination_dataset = destination_dataset,
+                             reception_smoothed_table = sat_reception_smoothed,
+                             reception_df = month_reception
+                        )
+# -
+
+# ## Final gap events table
+#
+# Create the final gap events table that is used as an input to the model of suspected drivers of AIS disabling. This table takes the `ais_gap_events_vYYYYMMDD` table created above and adds a handful of additional model features, including the smoothed reception quality.
+
+gap_events_features_table = 'ais_gap_events_features_{}'.format(output_version)
+gap_events_features_table
+
+if create_tables:
+    gap_features_tbl_cmd = "bq mk --schema=gaps/ais_gap_events_features.json \
+    --time_partitioning_field=gap_start \
+    --time_partitioning_type=DAY {}.{}".format(destination_dataset, 
+                                               gap_events_features_table)
+    os.system(gap_features_tbl_cmd)
+
+# +
+gap_features_cmd = utils.make_ais_gap_events_features_table(pipeline_version=pipeline_version,
+                                                   vi_version=vi_version,
+                                                   output_version=output_version,
+                                                   start_date=str(start_date),
+                                                   end_date=str(end_date),
+                                                   destination_dataset=destination_dataset,
+                                                   destination_table=gap_events_features_table)
+
+# gap_features_cmd
+
+# +
+# test query
+# test_cmd = gap_features_cmd.split('|')[0]
+# os.system(test_cmd)
+# -
+
+# Run gap features query
+# WARNING: BIG QUERY (~3.5 TB)
+if create_tables:
+    os.system(gap_features_cmd)
 
 
