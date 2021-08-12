@@ -1,15 +1,15 @@
   #standardsql
-  WITH 
-  
+  WITH
+
   #
   # Get all loitering events for carrier vessels between 2017-2019
-  # Minimum loitering time >= 4 hours, avg speed <= 2 knots, and 
+  # Minimum loitering time >= 4 hours, avg speed <= 2 knots, and
   # average distance from shore >= 20 nm
   #
   loitering_events AS (
   SELECT *
   FROM {{ destination_dataset }}.loitering_events_{{ output_version }}),
-  
+
   #
   # Bin distinct loitering events to quarter degree
   #
@@ -21,8 +21,9 @@
     loitering_hours
   FROM
     loitering_events
+  WHERE DATE(loitering_start_timestamp) < '2020-01-01'
   )
-  
+
   #
   # Aggregate by lat/lon bins and summarize events
   #

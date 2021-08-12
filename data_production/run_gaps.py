@@ -47,6 +47,7 @@ import pyseas.cm
 import utils 
 
 # %load_ext autoreload
+# %load_ext google.cloud.bigquery
 # %autoreload 2
 
 # BigQuery client
@@ -230,10 +231,10 @@ loitering_cmd = utils.make_loitering_events_table(vd_version = vd_version,
 if create_tables:
     os.system(loitering_cmd)
 
-gridded_loitering_cmd = utils.make_gridded_loitering_table(destination_dataset = destination_dataset,
+gridded_loitering_cmd = utils.make_gridded_loitering_table(destination_dataset = proj_dataset,
                                                            output_version = output_version,
                                                            destination_table = gridded_loitering_table)
-# gridded_loitering_cmd
+gridded_loitering_cmd
 
 if create_tables:
     os.system(gridded_loitering_cmd)
@@ -465,5 +466,90 @@ gap_features_cmd = utils.make_ais_gap_events_features_table(pipeline_version=pip
 # WARNING: BIG QUERY (~3.5 TB)
 if create_tables:
     os.system(gap_features_cmd)
+
+# # Copy Tables
+#
+# If needed, copy tables to a different BigQuery dataset.
+
+# +
+# Copy destination dataset
+cp_destination_dataset = 'proj_ais_gaps_catena'
+
+# List of tables to copy
+tables_to_cp = [
+    off_events_table,
+    on_events_table,
+    gap_events_table,
+    gap_events_features_table,
+    loitering_events_table,
+    gridded_loitering_table,
+    fishing_table,
+    ais_positions_hourly,
+    sat_reception_measured,
+    sat_reception_smoothed
+]
+
+if copy_tables:
+    for t in tables_to_cp:
+
+        print('Copying {d}.{t} \n to {cd}.{t}'.format(d = destination_dataset,
+                                                  cd = cp_destination_dataset,
+                                                  t = t))
+        # Format query
+        cp_cmd = """bq cp -n \
+        {d}.{t} \
+        {cd}.{t}""".format(d = destination_dataset,
+                           cd = cp_destination_dataset,
+                           t = t)
+
+        # Run command
+        os.system(cp_cmd)
+# -
+
+# # Download data
+#
+# Download the following datasets for us in the model to identify drivers of suspected disabling:
+# + Gap events with features
+# + Loitering events
+# + Gridded fishing
+
+# Create results folder 
+results_dir = "../results"
+# os.mkdir(results_dir)
+# Create folder for specific results version
+results_version_dir = os.path.join(results_dir, "gap_inputs_{}".format(output_version))
+# os.mkdir(results_version_dir)
+
+# %%bigquery gap_events_features_df
+SELECT * 
+FROM `world-fishing-827.scratch_tyler.ais_gap_events_features_v20210722` 
+WHERE gap_hours >= 12
+AND gap_start < '2021-01-01'
+
+gap_events_features_df.to_csv('gap_events_features_{}.csv'.format(output_version), index = False)
+
+# Download loitering events:
+
+# %%bigquery loitering_events_df
+SELECT *
+FROM proj_ais_gaps_catena.loitering_events_v20210722
+
+loitering_events_df.to_csv('{d}/loitering_events_v20210722.csv'.format(d = results_version_dir), index = False)
+
+# Gridded loitering
+
+# %%bigquery gridded_loitering_df
+SELECT *
+FROM proj_ais_gaps_catena.gridded_loitering_v20210722
+
+gridded_loitering_df.to_csv('{d}/loitering_quarter_degree_v20210722_2017_to_2019.csv'.format(d = results_version_dir), index = False)
+
+# Download gridded fishing:
+
+# %%bigquery gridded_fishing_df
+SELECT *
+FROM proj_ais_gaps_catena.gridded_fishing_v20210722
+
+gridded_fishing_df.to_csv('{d}/vessel_presence_quarter_degree_v20210722_2017_to_2019.csv'.format(d = results_version_dir), index = False)
 
 
