@@ -539,9 +539,10 @@ def make_smooth_reception_table(start_date,
 
 # Plot reception quality
 def plot_reception_quality(reception_start_date,
-                           destination_dataset,
-                           reception_smoothed_table,
-                           reception_df):
+                           reception_df,
+                           fig_min_value = 1,
+                           fig_max_value = 400
+                          ):
     
     # remove NaNs
     df = reception_df.dropna(subset=['lat_bin','lon_bin'])
@@ -563,16 +564,16 @@ def plot_reception_quality(reception_start_date,
     """
     # Figure size (one panel plot)
     fig = plt.figure(figsize=(10,10))
+    
+    titles = ["Class A", "Class B"]
 
-    titles = ["Class A {}".format(reception_start_date.date()),
-              "Class B {}".format(reception_start_date.date())]
+#     titles = ["Class A {}".format(reception_start_date.date()),
+#               "Class B {}".format(reception_start_date.date())]
 
     with pyseas.context(pyseas.styles.light): 
 
         axes = []
         ims = []
-        fig_min_value = 1
-        fig_max_value = 400  
 
         # Class A
         grid = np.maximum(class_a_reception, 1)
@@ -586,6 +587,7 @@ def plot_reception_quality(reception_start_date,
                                          norm = norm)
 
         ax.set_title(titles[0])
+        ax.text(-150*1000*100,80*1000*100, "A.")
         
         # Class B
         grid = np.maximum(class_b_reception, 1)
@@ -600,6 +602,7 @@ def plot_reception_quality(reception_start_date,
                                         )
         
         ax.set_title(titles[1])
+        ax.text(-150*1000*100,80*1000*100, "B.")
         
         cbar = fig.colorbar(im, ax=ax,
                   orientation='horizontal',
@@ -608,6 +611,5 @@ def plot_reception_quality(reception_start_date,
                   pad=0.02,
                  )
     
-        cbar.set_label("Satellite AIS positions per day")
+        cbar.set_label("Satellite positions per day")
         plt.tight_layout(pad=0.5)
-    
