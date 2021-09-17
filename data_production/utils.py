@@ -345,7 +345,8 @@ def make_reception_measured_table(destination_table,
                                   start_date,
                                   vi_version,
                                   segs_table,
-                                  output_version):
+                                  output_version,
+                                  include_all_speeds="False"):
     
     # Set end date to end of month of start date
     reception_start = str(start_date.date())
@@ -363,6 +364,7 @@ def make_reception_measured_table(destination_table,
        -D end_date="{end_date}" \
        -D vi_version="{vi_version}" \
        -D segs_table="{segs_table}" \
+       -D all_speeds="{all_speeds}" \
        -D destination_dataset="{destination_dataset}" \
        -D output_version="{output_version}" \
        | \
@@ -374,6 +376,7 @@ def make_reception_measured_table(destination_table,
                                                                 destination_table=destination_table,
                                                                 vi_version = vi_version,
                                                                 segs_table = segs_table,
+                                                                all_speeds = include_all_speeds,
                                                                 output_version = output_version)
     return cmd
 
@@ -462,7 +465,8 @@ def make_smooth_reception_table(start_date,
     
     month_reception_query = '''SELECT * 
                                FROM `{d}.{t}`
-                               WHERE _partitiontime = "{m}"'''.format(d = destination_dataset,
+                               WHERE _partitiontime = "{m}"
+                               AND lat_bin < 90'''.format(d = destination_dataset,
                                                                     t = reception_measured_table,
                                                                     m = str(reception_start.date()))
             

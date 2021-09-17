@@ -61,7 +61,7 @@ client = bigquery.Client()
 gfw_research = 'gfw_research'
 gfw_research_precursors = 'gfw_research_precursors'
 proj_dataset = 'proj_ais_gaps_catena'
-destination_dataset = 'scratch_tyler'
+destination_dataset = 'proj_ais_gaps_catena'
 
 pipeline_version = 'v20201001'
 pipeline_table = 'pipe_{}'.format(pipeline_version)
@@ -75,7 +75,7 @@ create_tables = True
 
 # Date range
 start_date = date(2017,1, 1)
-end_date = date(2020,12, 31)
+end_date = date(2019,12, 31)
 
 # Min gap hours
 min_gap_hours = 6
@@ -371,6 +371,10 @@ for r in reception_dates:
 
 utils.execute_commands_in_parallel(mr_cmds)
 
+# test query
+test_cmd = mr_cmds[0].split('|')[0]
+os.system(test_cmd)
+
 # ### Smoothed reception quality
 #
 # Next, interpolate the measured reception quality using a radial basis function. 
@@ -430,6 +434,47 @@ utils.plot_reception_quality(reception_start_date = r,
                              reception_df = month_reception
                         )
 # -
+
+# ### Alternate reception quality
+
+# +
+# Create tables for alternate speed reception quality
+sat_reception_measured_all_speeds_tbl = 'sat_reception_measured_one_degree_all_speeds_{}'.format(output_version)
+sat_reception_smoothed_all_speeds_tbl = 'sat_reception_smoothed_one_degree_all_speeds_{}'.format(output_version)
+
+if create_tables:
+    # measured reception quality
+    utils.make_bq_partitioned_table(destination_dataset, sat_reception_measured_all_speeds_tbl)
+    utils.make_bq_partitioned_table(destination_dataset, sat_reception_smoothed_all_speeds_tbl)
+# -
+
+# Generate commands
+mr_all_speed_cmds = []
+for r in reception_dates:
+#     print(str(r.date()))
+    cmd = utils.make_reception_measured_table(destination_table = sat_reception_measured, 
+                                        destination_dataset = destination_dataset,
+                                        start_date = r, 
+                                        vi_version = vi_version, 
+                                        segs_table="{}.{}".format("gfw_research", segs_table),
+                                        output_version = output_version,
+                                        include_all_speeds = "True")
+
+    mr_all_speed_cmds.append(cmd)
+
+# Run commands
+utils.execute_commands_in_parallel(mr_all_speed_cmds)
+
+# Now smooth the alternate reception quality maps.
+
+for r in reception_dates[8:]:
+    print(str(r.date()))
+    utils.make_smooth_reception_table(start_date = r,
+                                      reception_measured_table = sat_reception_measured_all_speeds_tbl,
+                                      destination_dataset = destination_dataset,
+                                      destination_table = sat_reception_smoothed_all_speeds_tbl)
+
+reception_dates[8:]
 
 # ## Final gap events table
 #
