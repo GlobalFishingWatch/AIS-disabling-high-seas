@@ -21,6 +21,7 @@ import matplotlib.colors as mpcolors
 import matplotlib as mpl
 import pandas as pd
 from matplotlib.pyplot import yticks
+import matplotlib.patches as mpatches
 
 import pyseas
 pyseas._reload()
@@ -115,8 +116,8 @@ def map_bivariate(grid_total, grid_ratio, title, vmax=0.2, a_vmin=0.1, a_vmax=10
 
 
 # %%
-def map_bivariate(grid_total, grid_ratio, title, vmax=0.2, a_vmin=0.1, a_vmax=10, 
-                  l_vmin=None, l_vmax=None, yticks=None, add_label=False):
+def map_bivariate(grid_total, grid_ratio, title=None, vmax=0.2, a_vmin=0.1, a_vmax=10, 
+                  l_vmin=None, l_vmax=None, yticks=None):#, add_label=False):
     width_fudge = 1.5
     if l_vmax is None:
         l_vmax = a_vmax
@@ -148,47 +149,131 @@ def map_bivariate(grid_total, grid_ratio, title, vmax=0.2, a_vmin=0.1, a_vmax=10
             cmap,
             norm1,
             norm2,
-            xlabel="fraction of time\nin disabling events",
-            ylabel="total hours\nof activity\n(per km$^{2}$)",
+            xlabel="Fraction of time\nin disabling events",
+            ylabel="Total vessel\nactivity\n(hours per km$^{2}$)",
             xformat="{x:.0%}",
             yformat="{x:.1f}",
             aspect_ratio=2.0,
-            fontsize=20,
-            loc=(0.6, -0.28)
+            fontsize=18,
+            loc=(0.6, -0.29)
         )
 
-        if add_label:
-            ax1 = ax.inset_axes([0.38, -0.32, 0.2, 0.2 / 3], transform=ax.transAxes)
-            ax1.axis('off')
-            ax1.text(0.5, 0.5, ha='right', fontsize=20,
-                     s="Ratio of Fishing Vessel Activity"
-                     "\nSpent in Disabling Events\n"
-                     "to All Vessel Activity\n"
-                     "at One Degree Resolution")
+        # if add_label:
+        #     ax1 = ax.inset_axes([0.38, -0.32, 0.2, 0.2 / 3], transform=ax.transAxes)
+        #     ax1.axis('off')
+        #     ax1.text(0.5, 0.5, ha='right', fontsize=20,
+        #              s="Ratio of Fishing Vessel Activity"
+        #              "\nSpent in Disabling Events\n"
+        #              "to All Vessel Activity\n"
+        #              "at One Degree Resolution")
         
         if yticks is not None:
             cb_ax.set_yticks(yticks)
         cb_ax.tick_params(labelsize=18)
+        
+        if title is not None:
+            ax.set_title(title, pad=20, fontsize=30)
+
+
+
+# %%
+def generate_rect(ax, lon_min, lon_max, lat_min, lat_max,):
+    
+    ll_corners = [
+        (lon_min, lat_min),
+        (lon_max, lat_min),
+        (lon_max, lat_max),
+        (lon_min, lat_max),
+        ((lon_min + lon_max) / 2, (lat_min + lat_max) / 2)
+    ]
+    lons = np.array([x for (x, y) in ll_corners])
+    lats = np.array([y for (x, y) in ll_corners])
+
+    xformed = ax.projection.transform_points(psm.identity, lons, lats)[:, :2]
+    xy = xformed[:4]
+    cntr = xformed[4]
+
+    rect = mpatches.Polygon(
+        xy,
+        linewidth=1.5,
+        edgecolor="#3c3c3b",
+        facecolor="none",
+        zorder=5
+    )
+    
+    return rect
+
+
+# %%
+def map_bivariate(grid_total, grid_ratio, title=None, vmax=0.2, a_vmin=0.1, a_vmax=10, 
+                  l_vmin=None, l_vmax=None, yticks=None):#, add_label=False):
+    width_fudge = 1.5
+    if l_vmax is None:
+        l_vmax = a_vmax
+    if l_vmin is None:
+        l_vmin = a_vmin
+        
+    norm1 = mpcolors.Normalize(vmin=0.0, vmax=vmax, clip=True)
+    norm2 = mpcolors.LogNorm(vmin=l_vmin, vmax=l_vmax, clip=True)
+
+    transmin, transmax = norm2([a_vmin, a_vmax])
+    def transmap(x):
+        return np.clip((x - transmin) / (transmax - transmin), 0, 1) 
+    cmap = psm.bivariate.TransparencyBivariateColormap(blue_red, transmap=transmap)
+    
+    with psm.context(psm.styles.light):
+        fig = plt.figure(figsize=(15, 15))
+        ax = psm.create_map()
+        ax.background_patch.set_fill(False)
+        psm.add_land(ax, facecolor="#C2CDE0", 
+                     edgecolor=tuple(np.array((0x16, 0x3F, 0x89, 127)) / 255),
+                    linewidth=width_fudge * 72 / 400, )
+
+        psm.add_bivariate_raster(
+            grid_ratio, np.clip(grid_total, l_vmin, l_vmax), cmap, norm1, norm2, origin="lower"
+        )
+        psm.add_eezs(edgecolor="#163F89", linewidth=width_fudge * 2 * 72 / 400, alpha=0.5)
+
+        cb_ax = psm.add_bivariate_colorbox(
+            cmap,
+            norm1,
+            norm2,
+            xlabel="Fraction of time\nin disabling events",
+            ylabel="Total vessel\nactivity\n(hours per km$^{2}$)",
+            xformat="{x:.0%}",
+            yformat="{x:.1f}",
+            aspect_ratio=2.0,
+            fontsize=18,
+            loc=(0.6, -0.29)
+        )
+        
+        if yticks is not None:
+            cb_ax.set_yticks(yticks)
+        cb_ax.tick_params(labelsize=18)
+        
+        if title is not None:
+            ax.set_title(title, pad=20, fontsize=30)
             
-        ax.set_title(title, pad=20, fontsize=30)
+        # Add bounding boxes
+        # ARG: -65,-55,-50,-35
+        lon_min, lon_max = -65, -55
+        lat_min, lat_max = -50, -35
+        rect = generate_rect(ax, lon_min, lon_max, lat_min, lat_max)
+        ax.add_patch(rect)
+        
+        # NW pacific: 143,175,38,52
+        lon_min, lon_max = 143, 175
+        lat_min, lat_max = 38, 52
+        rect = generate_rect(ax, lon_min, lon_max, lat_min, lat_max)
+        ax.add_patch(rect)
+        
+        # West Africa: -22.7,15.0,-8.2,23.3
+        lon_min, lon_max = -22.7, 15.0
+        lat_min, lat_max = -8.2, 23.3
+        rect = generate_rect(ax, lon_min, lon_max, lat_min, lat_max)
+        ax.add_patch(rect)
 
 
-
-# %%
-# Bivariate using interpolation
-grid_total = (all_gap_interp_2w + fishing_raster) * reception
-grid_ratio = frac_timelost_interp_2w * reception
-title = 'Fraction of Fishing Vessel Activity Lost to AIS Disabling'
-map_bivariate(grid_total, grid_ratio, title, a_vmin=.02, a_vmax=10)
-plt.savefig(figures_folder + "fig1_fraction_disabling_all.png", dpi=300, bbox_inches = 'tight')
-
-# %%
-# Bivariate using interpolation
-grid_total = (all_gap_interp_2w + fishing_raster) * reception
-grid_ratio = frac_timelost_interp_2w * reception
-title = 'Fraction of Fishing Vessel Activity Lost to AIS Disabling'
-map_bivariate(grid_total, grid_ratio, title, a_vmin=.02, a_vmax=10, add_label=True)
-plt.savefig(figures_folder + "fig1_fraction_disabling_all_with_label.png", dpi=300, bbox_inches = 'tight')
 
 # %% [markdown]
 # # Generate raster data for figures
@@ -371,8 +456,9 @@ reception[reception>1] = 1
 # Bivariate using interpolation
 grid_total = (all_gap_interp_2w + fishing_raster) * reception
 grid_ratio = frac_timelost_interp_2w * reception
-title = 'Fishing Vessel Activity With and Without AIS Disabled'
-map_bivariate(grid_total, grid_ratio, title, a_vmin=.02, a_vmax=10, yticks=[0.1, 1.0, 10.0])
+# title = 'Fraction of Fishing Vessel Activity Lost to AIS Disabling'
+map_bivariate(grid_total, grid_ratio, a_vmin=.02, a_vmax=10)
+plt.savefig(figures_folder + "fig1_fraction_disabling_all.png", dpi=300, bbox_inches = 'tight')
 
 # %% [markdown]
 # ## Figure 2
