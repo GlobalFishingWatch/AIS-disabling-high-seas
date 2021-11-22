@@ -433,9 +433,9 @@ a_vmin = 0.02
 a_vmax = 10
 
 # BY VESSEL CLASS
-vessel_classes = [('A', 'drifting_longlines', 'Drifting longlines'),
+vessel_classes = [('A', 'purse_seines', 'Purse seines'),
                   ('C', 'squid_jigger', 'Squid jiggers'),
-                  ('E', 'purse_seines', 'Purse seines'),
+                  ('E', 'drifting_longlines', 'Drifting longlines'),
                   ('G', 'trawlers', 'Trawlers'),
                  ]
 for i, (number, vessel_class, vessel_class_label) in enumerate(vessel_classes):
@@ -476,10 +476,10 @@ for i, (number, vessel_class, vessel_class_label) in enumerate(vessel_classes):
 
     
 # BY FLAG
-flags = [('B', 'CHN', 'China'),
+flags = [('B', 'ESP', 'Spain'),
          ('D', 'TWN', 'Taiwan'),
-         ('F', 'ESP', 'Spain'),
-         ('H', 'KOR', 'Korea'),
+         ('F', 'CHN', 'China'),
+         ('H', 'KOR', 'South Korea'),
         ]
 for i, (number, flag, flag_label) in enumerate(flags):
     intentional_gaps = psm.rasters.df2raster(
@@ -516,7 +516,7 @@ for i, (number, flag, flag_label) in enumerate(flags):
     grid_total = all_gaps + fishing
     grid_ratio = (intentional_gaps / grid_total) * reception
 
-    ax = map_bivariate(grid_total, grid_ratio, label=flag, number=number, gs=gs[i,1], a_vmin=a_vmin, a_vmax=a_vmax)
+    ax = map_bivariate(grid_total, grid_ratio, label=flag_label, number=number, gs=gs[i,1], a_vmin=a_vmin, a_vmax=a_vmax)
     
 
 # Add one color bar for entire figure.
