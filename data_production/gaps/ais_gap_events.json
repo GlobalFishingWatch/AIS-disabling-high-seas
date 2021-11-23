@@ -42,9 +42,15 @@
 	},
 	{
 		"mode": "NULLABLE",
+		"name": "gap_start_seg_id",
+		"type": "STRING",
+		"description": "seg_id for last position before start of gap"
+	},
+	{
+		"mode": "NULLABLE",
 		"name": "gap_start_msgid",
 		"type": "STRING",
-		"description": "position message for start of gap"
+		"description": "message ID for last position message before for start of gap"
 	},
 	{
 		"mode": "NULLABLE",
@@ -95,7 +101,7 @@
 		"description": "distance from nearest port (meters) at start of gap (using rasterized distance)"
 	},
 	{
-		"mode": "NULLABLE",
+		"mode": "REPEATED",
 		"name": "gap_start_eez",
 		"type": "STRING",
 		"description": "nearest EEZ at start of gap"
@@ -105,6 +111,12 @@
 		"name": "gap_start_rfmo",
 		"type": "STRING",
 		"description": "nearest RFMO at start of gap"
+	},
+	{
+		"mode": "NULLABLE",
+		"name": "gap_end_seg_id",
+		"type": "STRING",
+		"description": "seg_id for first position after end of gap"
 	},
 	{
 		"mode": "NULLABLE",
@@ -161,7 +173,7 @@
 		"description": "distance from nearest port (meters) at end of gap (using rasterized distance)"
 	},
 	{
-		"mode": "NULLABLE",
+		"mode": "REPEATED",
 		"name": "gap_end_eez",
 		"type": "STRING",
 		"description": "nearest EEZ at end of gap"
@@ -193,7 +205,7 @@
 	{
 		"mode": "NULLABLE",
 		"name": "is_closed",
-		"type": "INTEGER",
+		"type": "BOOLEAN",
 		"description": "1 if the gap is closed, 0 if the gap is open"
 	}
 ]

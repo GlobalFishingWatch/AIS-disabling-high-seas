@@ -47,6 +47,7 @@ WITH
   source_table AS (
   SELECT
     ssvid,
+    seg_id,
     msgid,
     timestamp,
     lat,
@@ -61,9 +62,9 @@ WITH
   FROM
       `{{  pipeline_table  }}`
   {% if event == 'off' %}
-  WHERE DATE(date) >= today() AND DATE(date) <= tomorrow()
+  WHERE DATE(_partitiontime) >= today() AND DATE(_partitiontime) <= tomorrow()
   {% elif event == 'on' %}
-  WHERE DATE(date) <= today() AND DATE(date) >= yesterday()
+  WHERE DATE(_partitiontime) <= today() AND DATE(_partitiontime) >= yesterday()
   {% endif %}
   AND seg_id IN (
   SELECT
@@ -90,6 +91,7 @@ WITH
   positions AS (
   SELECT
     ssvid,
+    seg_id as {{event}}_seg_id,
     msgid as {{event}}_msgid,
     timestamp as {{event}}_timestamp,
     /* LAG/LEAD depending on event type */
@@ -115,7 +117,8 @@ WITH
     receiver_type as {{event}}_receiver_type,
     distance_from_shore_m as {{event}}_distance_from_shore_m,
     distance_from_port_m as {{event}}_distance_from_port_m,
-    regions.eez[SAFE_ORDINAL(1)] as {{event}}_eez,
+    regions.eez as {{event}}_eez_id,
+    #regions.eez[SAFE_ORDINAL(1)] as {{event}}_eez_id,
     ARRAY_TO_STRING(regions.rfmo, ", ") as {{event}}_rfmo
   FROM
     source_table
@@ -176,7 +179,7 @@ WITH
     `{{  pipeline_table  }}`
   WHERE
     # Look back one day
-    DATE(date) >= yesterday() AND DATE(date) <= today()
+    DATE(_partitiontime) >= yesterday() AND DATE(_partitiontime) <= today()
     AND ssvid IN (SELECT ssvid FROM events)
     AND seg_id IN (
       SELECT
@@ -185,7 +188,7 @@ WITH
         `{{  segs_table }}`
       WHERE
         good_seg
-        AND NOT overlapping_and_short) 
+        AND NOT overlapping_and_short)
 ),
 
   /*
@@ -215,23 +218,13 @@ WITH
 {% endif %}
 
 /*
-Add EEZ ISO3 and return final event table,
+Return final event table,
 joining with twelve_hours_before if off events.
 */
 SELECT
-  * EXCEPT(eez_id, {{event}}_eez, sovereign1_iso3),
-  sovereign1_iso3 as {{event}}_eez
-FROM events a
-LEFT JOIN (
-  SELECT
-    eez_id,
-    sovereign1_iso3
-  FROM `gfw_research.eez_info`
-  ) b
-ON(a.{{event}}_eez = CAST(b.eez_id AS STRING))
-{% if event == 'off' %}
+  *
+FROM events {% if event == 'off' %} a
 LEFT JOIN
 twelve_hours_before
 USING (ssvid, off_timestamp)
 {% endif %}
-

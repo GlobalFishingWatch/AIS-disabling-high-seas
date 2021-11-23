@@ -1,0 +1,311 @@
+# Define some utility functions to make thinks more readable
+CREATE TEMP FUNCTION today() AS (DATE('{{YYYY_MM_DD}}'));
+CREATE TEMP FUNCTION yesterday() AS (DATE_SUB(today(), INTERVAL 1 DAY));
+
+CREATE TEMP FUNCTION tomorrow() AS (DATE_ADD(today(), INTERVAL 1 DAY));
+
+CREATE TEMP FUNCTION YYYYMMDD(d DATE) AS (
+    # Format a date as YYYYMMDD
+    # e.g. DATE('2018-01-01') => '20180101'
+    FORMAT_DATE('%Y%m%d',
+      d) );
+CREATE TEMP FUNCTION first_half_hour() AS ( TIMESTAMP_ADD(TIMESTAMP(today()), INTERVAL 30 MINUTE) );
+
+CREATE TEMP FUNCTION weight_average_lons(lon float64, lon2 float64, timeto int64, timeto2 int64) AS ( 
+case 
+when lon - lon2 > 350 then ( (lon-360)*timeto2 + lon2*timeto)/(timeto+timeto2) 
+when lon - lon2 < -350 then ( (lon+360)*timeto2 + lon2*timeto)/(timeto+timeto2) 
+else (lon*timeto2 + lon2*timeto)/(timeto+timeto2) end 
+);
+
+CREATE TEMP FUNCTION reasonable_lon(lon float64) AS 
+(case when lon > 180 then lon - 360
+when lon < -180 then lon + 360
+else lon end
+);
+
+CREATE TEMP FUNCTION avg_speed_knots(lon float64,lat float64,lon2 float64,lat2 float64, seconds float64) as (
+
+st_distance(st_geogpoint(lon,lat),st_geogpoint(lon2,lat2))/seconds*3600/1852
+
+);
+
+
+WITH
+      
+times as (
+select * 
+from unnest(
+    GENERATE_TIMESTAMP_ARRAY(first_half_hour(),
+                             timestamp_add(first_half_hour(), interval 23 Hour),
+                             INTERVAL 1 hour
+                             )) as hour_midpoint
+),
+
+--
+--
+
+position_table as (
+SELECT 
+    * EXCEPT(speed_knots), 
+    IF(speed_knots > 50, 0,speed_knots) as speed 
+FROM gfw_research.pipe_v20201001
+WHERE date(_partitiontime) BETWEEN yesterday() AND tomorrow()
+),
+
+--
+--
+
+leaded_positions as (
+SELECT
+    ssvid,
+    type,
+    seg_id,
+    lat,
+    LEAD(lat,1) OVER (PARTITION BY seg_id ORDER BY timestamp) lat2,
+    lon,
+    LEAD(lon,1) OVER (PARTITION BY seg_id ORDER BY timestamp) lon2,
+    timestamp,
+    LEAD(timestamp,1) OVER (PARTITION BY seg_id ORDER BY timestamp) timestamp2,
+    speed,
+    LEAD(speed,1) OVER (PARTITION BY seg_id ORDER BY timestamp) speed2,
+    course,
+    LEAD(course,1) OVER (PARTITION BY seg_id ORDER BY timestamp) course2
+FROM position_table 
+),
+
+--
+--
+
+-- Get the lagged positions and only take the ones that are null. 
+lagged_positions as (
+SELECT
+    ssvid,
+    type,
+    seg_id,
+    null as lat,
+    lat as lat2,
+    null as lon,
+    lon as lon2,
+    lag(timestamp,1) OVER (PARTITION BY seg_id ORDER BY timestamp) timestamp,
+    timestamp as timestamp2,
+    null as speed,
+    speed as speed2,
+    null as course,
+    course as course2
+FROM
+position_table 
+),
+
+--
+--
+-- Throw away lags except where the previous point
+-- is null, which means it is at the start of the segment
+seg_starts as (
+ SELECT * 
+ FROM lagged_positions 
+ WHERE timestamp is null
+),
+
+--
+-- Union the leaded positions with the started segments
+-- This way we get the start of segments
+-- as well as just the end
+leaded_position_with_segstart as (
+SELECT * FROM leaded_positions 
+UNION ALL
+SELECT * FROM seg_starts
+),
+
+--
+--
+
+candidate_positions as (
+SELECT
+  ssvid,
+  seg_id,
+  type,
+  timestamp_diff(timestamp2, hour_midpoint, SECOND) as timeto2,
+  timestamp_diff(hour_midpoint, timestamp, SECOND) as timeto,
+  timestamp,
+  timestamp2,
+  lat,
+  lat2,
+  lon,
+  lon2,
+  speed,
+  speed2,
+  course,
+  course2,
+  hour_midpoint,
+FROM 
+leaded_position_with_segstart a
+CROSS JOIN times 
+    WHERE 
+    ( -- The position is just before or after the ping
+      ( 
+        (-- case one, both exist
+            timestamp <= hour_midpoint
+            AND timestamp2 > hour_midpoint 
+        ) 
+        -- case two, only the second position exists
+        -- because the position is at the start of a seg
+        ) or ( 
+            timestamp2 is null
+            AND timestamp <= hour_midpoint
+        -- case three, only the first position exists
+        -- because the position is at the end of a seg
+        ) or (
+            timestamp is null 
+            AND timestamp2 > hour_midpoint
+        )
+    )
+),
+
+--
+--
+
+interpolated_positions as (
+SELECT
+    (lat*timeto2 + lat2*timeto)/(timeto+timeto2) as lat_center,
+    reasonable_lon(weight_average_lons(lon, lon2, timeto, timeto2)) as lon_center,
+    lat + cos(course*3.14/180) -- x component
+    *speed*timeto/60/60 -- nautical miles traveled at speed in time
+    /(60) -- divided by the nautical miles per degree lon,
+    -- which is 60 t
+    as lat_interpolate,
+    lon + sin(course*3.14/180) -- y component
+    *speed*timeto/60/60 -- nautical miles traveled at speed in time
+    /(60/cos(ifnull(lat,lat2)*3.14/180)) -- divided by the nautical miles per degree lon,
+    -- which is 60 divided by cos of the lat
+    as lon_interpolate,
+    -- Now the same for lat 2 and lon 2 -- note that these are subtracted
+    -- because it is the opposite course to extrapolate backward
+    lat2 - cos(course2*3.14/180) -- x component
+    *speed2*timeto2/60/60 -- nautical miles traveled at speed in time
+    /(60) -- divided by the nautical miles per degree lon,
+    -- which is 60 
+    as lat_interpolate2,
+    lon2 - sin(course2*3.14/180) -- y component
+    *speed2*timeto2/60/60 -- nautical miles traveled at speed in time
+    /(60/cos(ifnull(lat2,lat)*3.14/180)) -- divided by the nautical miles per degree latitude, which is 60 
+    -- divided by the cos of lat
+    as lon_interpolate2,
+    avg_speed_knots(lon,lat,lon2,lat2, timeto+timeto2) as interpolated_speed_knots,
+    *
+FROM candidate_positions
+),
+
+--
+--
+
+interpolated_positions2 as (
+SELECT
+  ssvid,
+  seg_id,
+  lat, lon, lat2, lon2,
+  lat_interpolate, lon_interpolate,
+  lat_interpolate2, lon_interpolate2,
+  interpolated_speed_knots,
+  lat_center,
+  lon_center,
+  timestamp,
+  timestamp2,
+  hour_midpoint,
+  timeto,
+  timeto2,
+  (timeto + timeto2)/3600 gap_hours,
+  case when timeto is null then timeto2
+  when timeto2 is null then timeto
+  when timeto > timeto2 then timeto2
+  when timeto <= timeto2 then timeto
+  else timeto end as seconds_to_nearest_ping,
+  speed, speed2
+FROM 
+  interpolated_positions
+),
+
+positions_by_hour as (
+select 
+    ssvid, 
+    seg_id,
+    count(distinct floor(EXTRACT(minute FROM timestamp)/5)) five_minute_pos,
+    sum(if(receiver_type = 'terrestrial',1,0)) ter_positions,
+    sum(if(receiver_type = 'satellite',1,0)) sat_positions,
+    extract(hour from timestamp) as hour,
+    sum(if(type in ("AIS.1","AIS.2","AIS.3"),1,0)) A_messages,
+    sum(if(type in ("AIS.18","AIS.19"),1,0)) B_messages,
+    avg(speed) avg_speed_knots
+from position_table
+where date(timestamp) = today()
+group by ssvid, seg_id, hour
+),
+          --
+          --
+positions_and_pings_by_hour as (
+select 
+    a.ssvid ssvid,
+    a.seg_id,
+    extract(hour from hour_midpoint) as hour,
+    hour_midpoint,
+    case 
+    when lat is null then lat_interpolate2
+    when lat2 is null then lat_interpolate
+    else lat_center end as lat,
+    case when lon is null then reasonable_lon(lon_interpolate2)
+    when lon2 is null then reasonable_lon(lon_interpolate)
+    else lon_center end as lon,
+    lon_center
+    lat_center,
+    lon_center,
+    lat as lat1, 
+    lon as lon1, 
+    lat2,
+    lon2,
+    ifnull(ter_positions,0) ter_positions,
+    ifnull(sat_positions,0) sat_positions,
+    five_minute_pos,
+    ifnull(A_messages,0) A_messages,
+    ifnull(B_messages,0) B_messages,
+    avg_speed_knots,
+    seconds_to_nearest_ping/3600 as hours_to_nearest_ping,
+    gap_hours,
+    interpolated_speed_knots,
+    speed,
+    speed2
+ from interpolated_positions2 a
+ left join
+ positions_by_hour b
+ on a.ssvid=b.ssvid 
+    and a.seg_id=b.seg_id
+    and extract(hour from a.hour_midpoint) = b.hour)
+
+--
+--
+
+select 
+    ssvid,
+    seg_id, 
+    hour, 
+    hour_midpoint,
+    lat, 
+    lon, 
+    lat_center,
+    lon_center,
+    ter_positions, 
+    sat_positions, 
+    A_messages,
+    B_messages,
+    avg_speed_knots,
+    interpolated_speed_knots, 
+    lon1, 
+    lon2, 
+    lat1,
+    lat2, 
+    ifnull(five_minute_pos, 0) five_minute_pos, 
+    hours_to_nearest_ping, 
+    gap_hours,
+    speed, 
+    speed2, 
+    (lat1 is null or lat2 is null) and hours_to_nearest_ping > 1 as interpolated_at_segment_startorend
+from positions_and_pings_by_hour 
