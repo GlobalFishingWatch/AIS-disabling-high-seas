@@ -97,8 +97,9 @@ def generate_rect(ax, lon_min, lon_max, lat_min, lat_max,):
 
 
 # %%
-def map_bivariate(grid_total, grid_ratio, gs=None, title=None, label=None, number=None, vmax=0.2, a_vmin=0.1, a_vmax=10, 
-                  l_vmin=None, l_vmax=None, yticks=None, bboxes=None, add_cbar=False):
+def map_bivariate(grid_total, grid_ratio, gs=None, title=None, label=None, number=None, 
+                  vmax=0.2, a_vmin=0.1, a_vmax=10, l_vmin=None, l_vmax=None, 
+                  land_scale='10m', yticks=None, bboxes=None, add_cbar=False):
     '''
     Bivariate map that assumes it's mapping total vessel activity against 
     the fraction of that activity spent in disabling events.
@@ -141,7 +142,7 @@ def map_bivariate(grid_total, grid_ratio, gs=None, title=None, label=None, numbe
             ax = psm.create_map()
             
         ax.background_patch.set_fill(False)
-        psm.add_land(ax, facecolor="#C2CDE0", 
+        psm.add_land(ax, facecolor="#C2CDE0", scale=land_scale,
                      edgecolor=tuple(np.array((0x16, 0x3F, 0x89, 127)) / 255),
                     linewidth=width_fudge * 72 / 400, )
 
@@ -155,10 +156,9 @@ def map_bivariate(grid_total, grid_ratio, gs=None, title=None, label=None, numbe
                 cmap,
                 norm1,
                 norm2,
-                xlabel="Fraction of time\nin disabling events",
-                ylabel="Total vessel\nactivity\n(hours per km$^{2}$)",
                 xformat="{x:.0%}",
                 yformat="{x:.1f}",
+                pad=0.1,
                 aspect_ratio=2.0,
                 fontsize=18,
                 loc=(0.6, -0.29)
@@ -167,6 +167,8 @@ def map_bivariate(grid_total, grid_ratio, gs=None, title=None, label=None, numbe
             if yticks is not None:
                 cb_ax.set_yticks(yticks)
             cb_ax.tick_params(labelsize=18)
+            cb_ax.set_xlabel("Fraction of activity obscured\nby suspected disabling", labelpad=10)
+            cb_ax.set_ylabel("Estimated total\nfishing vessel\nactivity\n(hours per km$^{2}$)", labelpad=10)
         
         if title is not None:
             ax.set_title(title, pad=20, fontsize=30)
@@ -328,12 +330,12 @@ fishing_raster = psm.rasters.df2raster(df_fishing,
 
 # %%
 
-itentional_gap_raster = psm.rasters.df2raster(df_raster,
+intentional_gap_raster = psm.rasters.df2raster(df_raster,
                                'lon_index', 'lat_index',
                                'real_gap_hours', xyscale=scale, 
                                 per_km2=True, origin = 'lower')
 
-itentional_gap_raster_2w = psm.rasters.df2raster(df_raster,
+intentional_gap_raster_2w = psm.rasters.df2raster(df_raster,
                                'lon_index', 'lat_index',
                                'real_gap_hours_2w', xyscale=scale, 
                                 per_km2=True, origin = 'lower')
@@ -349,20 +351,20 @@ all_gap_raster_2w = psm.rasters.df2raster(df_raster,
                                 per_km2=True, origin = 'lower')
 
 # %%
-frac_timelost_raster = itentional_gap_raster /(all_gap_raster + fishing_raster)
+frac_timelost_raster = intentional_gap_raster /(all_gap_raster + fishing_raster)
 
-frac_timelost_raster_2w = itentional_gap_raster_2w /(all_gap_raster_2w + fishing_raster)
+frac_timelost_raster_2w = intentional_gap_raster_2w /(all_gap_raster_2w + fishing_raster)
 
 # %% [markdown]
 # ### Using the interpolation method
 
 # %%
-itentional_gap_interp = psm.rasters.df2raster(df_interp,
+intentional_gap_interp = psm.rasters.df2raster(df_interp,
                                'lon_index', 'lat_index',
                                'real_gap_hours', xyscale=scale, 
                                 per_km2=True, origin = 'lower')
 
-itentional_gap_interp_2w = psm.rasters.df2raster(df_interp,
+intentional_gap_interp_2w = psm.rasters.df2raster(df_interp,
                                'lon_index', 'lat_index',
                                'real_gap_hours_2w', xyscale=scale, 
                                 per_km2=True, origin = 'lower')
@@ -378,9 +380,9 @@ all_gap_interp_2w = psm.rasters.df2raster(df_interp,
                                 per_km2=True, origin = 'lower')
 
 # %%
-frac_timelost_interp = itentional_gap_interp /(all_gap_interp + fishing_raster)
+frac_timelost_interp = intentional_gap_interp /(all_gap_interp + fishing_raster)
 
-frac_timelost_interp_2w = itentional_gap_interp_2w /(all_gap_interp_2w + fishing_raster)
+frac_timelost_interp_2w = intentional_gap_interp_2w /(all_gap_interp_2w + fishing_raster)
 
 
 # %% [markdown]
@@ -417,8 +419,9 @@ bbox_NWP = (143, 175, 38, 52)
 bbox_WA = (-23, 15, -8, 23)
 bboxes = [bbox_ARG, bbox_NWP, bbox_WA]
         
-ax, cb_ax = map_bivariate(grid_total, grid_ratio, a_vmin=.02, a_vmax=10, bboxes=bboxes, add_cbar=True)
+ax = map_bivariate(grid_total, grid_ratio, a_vmin=.02, a_vmax=10, bboxes=bboxes, add_cbar=True, land_scale='110m')
 plt.savefig(figures_folder + "fig1_fraction_disabling_all.png", dpi=300, bbox_inches = 'tight')
+plt.show()
 
 # %% [markdown] tags=[]
 # ## Figure 2
@@ -433,7 +436,7 @@ a_vmin = 0.02
 a_vmax = 10
 
 # BY VESSEL CLASS
-vessel_classes = [('A', 'purse_seines', 'Purse seines'),
+vessel_classes = [('A', 'purse_seines', 'Tuna purse seines'),
                   ('C', 'squid_jigger', 'Squid jiggers'),
                   ('E', 'drifting_longlines', 'Drifting longlines'),
                   ('G', 'trawlers', 'Trawlers'),
@@ -472,7 +475,8 @@ for i, (number, vessel_class, vessel_class_label) in enumerate(vessel_classes):
     grid_total = all_gaps + fishing
     grid_ratio = (intentional_gaps / grid_total) * reception
 
-    map_bivariate(grid_total, grid_ratio, label=vessel_class_label, number=number, gs=gs[i,0], a_vmin=a_vmin, a_vmax=a_vmax)
+    map_bivariate(grid_total, grid_ratio, label=vessel_class_label, number=number, 
+                  gs=gs[i,0], a_vmin=a_vmin, a_vmax=a_vmax, land_scale='110m')
 
     
 # BY FLAG
@@ -516,7 +520,8 @@ for i, (number, flag, flag_label) in enumerate(flags):
     grid_total = all_gaps + fishing
     grid_ratio = (intentional_gaps / grid_total) * reception
 
-    ax = map_bivariate(grid_total, grid_ratio, label=flag_label, number=number, gs=gs[i,1], a_vmin=a_vmin, a_vmax=a_vmax)
+    ax = map_bivariate(grid_total, grid_ratio, label=flag_label, number=number, 
+                       gs=gs[i,1], a_vmin=a_vmin, a_vmax=a_vmax, land_scale='110m')
     
 
 # Add one color bar for entire figure.
@@ -537,10 +542,9 @@ with psm.context(psm.styles.light):
         cmap,
         norm1,
         norm2,
-        xlabel="Fraction of time\nin disabling events",
-        ylabel="Total vessel\nactivity\n(hours per km$^{2}$)",
         xformat="{x:.0%}",
         yformat="{x:.1f}",
+        pad=0.1,
         width = 0.5,
         height = 0.5,
         fontsize=18,
@@ -549,6 +553,8 @@ with psm.context(psm.styles.light):
     )
     cb_ax.tick_params(labelsize=18)
     cb_ax.set_xmargin(0)
+    cb_ax.set_xlabel("Fraction of activity obscured\nby suspected disabling", labelpad=10)
+    cb_ax.set_ylabel("Estimated total\nfishing vessel\nactivity\n(hours per km$^{2}$)", labelpad=10)
 
 plt.savefig(figures_folder + "fig2_fraction_disabling_geartype_flag.png", dpi=300, bbox_inches = 'tight')
 plt.show()
