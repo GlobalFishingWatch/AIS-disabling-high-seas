@@ -35,6 +35,7 @@ from datetime import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
 import time
 from google.cloud import bigquery
+from google.cloud.exceptions import NotFound
 from jinja2 import Template
 
 import pyseas
@@ -107,11 +108,27 @@ gap_events_table = 'ais_gap_events_{}'.format(output_version)
 
 # Create tables for off/on events.
 
-if create_tables:
-    # Off events
+# +
+# Off events
+try:
+    client.get_table("{d}.{t}".format(d = destination_dataset, t = off_events_table))
+    print("Table {d}.{t} already exists".format(d = destination_dataset, t = off_events_table))
+except NotFound:
+    print("Table {d}.{t} is not found.".format(d = destination_dataset, t = off_events_table))
+    print("Creating table {d}.{t}.".format(d = destination_dataset, t = off_events_table))
+    # create off events table if needed
     utils.make_bq_partitioned_table(destination_dataset, off_events_table)
-    # On events
-    utils.make_bq_partitioned_table(destination_dataset, on_events_table)
+
+# On events
+try:
+    client.get_table("{d}.{t}".format(d = destination_dataset, t = on_events_table))
+    print("Table {d}.{t} already exists".format(d = destination_dataset, t = on_events_table))
+except NotFound:
+    print("Table {d}.{t} is not found.".format(d = destination_dataset, t = on_events_table))
+    print("Creating table {d}.{t}.".format(d = destination_dataset, t = on_events_table))
+    # Create on events table if needed
+    utils.make_bq_partitioned_table(destination_dataset, on_events_table)     
+# -
 
 # ### Off events
 #
@@ -205,9 +222,6 @@ os.system(gap_schema_cmd)
 #
 # + subset the `ais_gap_events_vYYYYMMDD` dataset to only include fishing vessels 
 # + Add additional model variables not calculated at the time of the gap events creation:
-#     + pos
-#
-# **TODO** 
 
 # # Loitering
 # Produce datasets of loitering events and gridded loitering activity (at quarter degree) for use by the drivers of suspected disabling model.
@@ -270,30 +284,52 @@ if create_tables:
 # - AIS reception
 # - Time lost to gaps
 #
-# > The original reception quality method used a slightly different interpolation [query](https://github.com/GlobalFishingWatch/ais-gaps-and-reception/blob/master/data-production/hourly_interpoloation_v20191120.sql.j2)/table (`gfw_research_precursors.ais_positions_byssvid_hourly_v20191118`) than the [query](https://github.com/GlobalFishingWatch/ais-gaps-and-reception/blob/master/data-production/pipe-interpolation/hourly_interpoloation_v20201027.sql.j2) used to estimate time lost to gaps. These approaches have been combined/streamlined into the `interpolation/hourly_interpolation_byseg.sql.j2` in this repo.
+# > The original reception quality method used a slightly different interpolation [query](https://github.com/GlobalFishingWatch/ais-gaps-and-reception/blob/master/data-production/hourly_interpoloation_v20191120.sql.j2)/table (`gfw_research_precursors.ais_positions_byssvid_hourly_v20191118`) than the [query](https://github.com/GlobalFishingWatch/ais-gaps-and-reception/blob/master/data-production/pipe-interpolation/hourly_interpoloation_v20201027.sql.j2) used to estimate time lost to gaps. These approaches have been combined/streamlined into the `interpolation/hourly_interpolation_byseg.sql.j2` in this repo. This query was used to generate the interpolated positions for reception quality and is similar in form to the query used to generate interpolated fishing vessels positions (`hourly_fishing_interpolation.sql.j2`).
 #
 # ### Create tables
 #
 # First create empty date partitioned tables to store interpolated positions.
 
-# +
 # Destination tables
 # ais_positions_hourly = 'ais_positions_byssvid_hourly_{}'.format(output_version)
 # By seg_id
 ais_positions_hourly = 'ais_positions_byseg_hourly_{}'.format(output_version)
+ais_positions_hourly_fishing = 'ais_positions_byseg_hourly_fishing_{}'.format(output_version)
+loitering_positions_hourly = 'loitering_positions_byseg_hourly_{}'.format(output_version)
 
-ais_positions_hourly_fishing = 'ais_positions_byssvid_hourly_fishing_{}'.format(output_version)
-gap_positions_hourly = 'gap_positions_byssvid_hourly_{}'.format(output_version)
-loitering_positions_hourly = 'loitering_positions_byssvid_hourly_{}'.format(output_version)
-# -
+# Create tables:
 
-if create_tables:
-    # all positions hourly
+# +
+# all positions hourly
+try:
+    client.get_table("{d}.{t}".format(d = destination_dataset, t = ais_positions_hourly))
+    print("Table {d}.{t} already exists".format(d = destination_dataset, t = ais_positions_hourly))
+except NotFound:
+    print("Table {d}.{t} is not found.".format(d = destination_dataset, t = ais_positions_hourly))
+    print("Creating table {d}.{t}.".format(d = destination_dataset, t = ais_positions_hourly))
+    # create table if needed
     utils.make_bq_partitioned_table(destination_dataset, ais_positions_hourly)
-    # fishing vessel positions hourly
+
+# fishing vessel positions
+try:
+    client.get_table("{d}.{t}".format(d = destination_dataset, t = ais_positions_hourly_fishing))
+    print("Table {d}.{t} already exists".format(d = destination_dataset, t = ais_positions_hourly_fishing))
+except NotFound:
+    print("Table {d}.{t} is not found.".format(d = destination_dataset, t = ais_positions_hourly_fishing))
+    print("Creating table {d}.{t}.".format(d = destination_dataset, t = ais_positions_hourly_fishing))
+    # Create table if needed
     utils.make_bq_partitioned_table(destination_dataset, ais_positions_hourly_fishing)
-    # gap positions hourly
-    utils.make_bq_partitioned_table(destination_dataset, gap_positions_hourly)
+        
+# loitering positions
+try:
+    client.get_table("{d}.{t}".format(d = destination_dataset, t = loitering_positions_hourly))
+    print("Table {d}.{t} already exists".format(d = destination_dataset, t = loitering_positions_hourly))
+except NotFound:
+    print("Table {d}.{t} is not found.".format(d = destination_dataset, t = loitering_positions_hourly))
+    print("Creating table {d}.{t}.".format(d = destination_dataset, t = loitering_positions_hourly))
+    # Create table if needed
+    utils.make_bq_partitioned_table(destination_dataset, loitering_positions_hourly)
+# -
 
 # ### Interpolate all vessel positions
 #
@@ -311,25 +347,24 @@ utils.execute_commands_in_parallel(int_cmds)
 
 # ### Interpolate fishing vessel positions
 # Interpolate positions for fishing vessels, including both `nnet_score` and `night_loitering` for determining when `squid_jiggers` are fishing.
-#
-# TODO: Update this to the same logic as for all vessels.
 
-# +
 # Store commands
-# int_fishing_cmds = []
-# for t in tp:
-#     cmd = utils.make_hourly_fishing_interpolation_table(date = t,
-#                                                 destination_dataset = destination_dataset,
-#                                                 destination_table = ais_positions_hourly_fishing)
-#     int_fishing_cmds.append(cmd)
+int_fishing_cmds = []
+for t in tp:
+    cmd = utils.make_hourly_fishing_interpolation_table(date = t,
+                                                destination_dataset = destination_dataset,
+                                                destination_table = ais_positions_hourly_fishing)
+    int_fishing_cmds.append(cmd)
 
 # +
-# utils.execute_commands_in_parallel(int_fishing_cmds)
+# test query
+# test_cmd = int_fishing_cmds[0].split('|')[0]
+# test_cmd
+# os.system(test_cmd)
 # -
 
-# ### Interpolate positions during AIS gap events
-#
-# > **Note:** Interpolating positions between gap events was originally done using the `raw_gaps_vYYYYMMDD` table, which included the gaps with additional parameters applied to them - e.g. `pos_x_hours_before`. Need to produce a version of this table or interpolate the gap events as is.
+# Run commands
+utils.execute_commands_in_parallel(int_fishing_cmds)
 
 # ## AIS Reception Quality
 #
@@ -371,9 +406,11 @@ for r in reception_dates:
 
 utils.execute_commands_in_parallel(mr_cmds)
 
+# +
 # test query
-test_cmd = mr_cmds[0].split('|')[0]
-os.system(test_cmd)
+# test_cmd = mr_cmds[0].split('|')[0]
+# os.system(test_cmd)
+# -
 
 # ### Smoothed reception quality
 #
@@ -511,6 +548,88 @@ gap_features_cmd = utils.make_ais_gap_events_features_table(pipeline_version=pip
 # WARNING: BIG QUERY (~3.5 TB)
 if create_tables:
     os.system(gap_features_cmd)
+
+# ## Reception quality excluding disabling events
+#
+# Calculate reception quality only after excluding suspected disabling events.
+
+# +
+# Create tables for alternate speed reception quality
+sat_reception_measured_no_disabling_tbl = 'sat_reception_measured_one_degree_no_disabling_{}'.format(output_version)
+sat_reception_smoothed_no_disabling_tbl = 'sat_reception_smoothed_one_degree_no_disabling_{}'.format(output_version)
+
+if create_tables:
+    # measured reception quality
+    utils.make_bq_partitioned_table(destination_dataset, sat_reception_measured_no_disabling_tbl)
+    utils.make_bq_partitioned_table(destination_dataset, sat_reception_smoothed_no_disabling_tbl)
+# -
+
+# Generate commands
+mr_no_disable_cmds = []
+for r in reception_dates:
+#     print(str(r.date()))
+    cmd = utils.make_reception_measured_table(destination_table = sat_reception_measured_no_disabling_tbl, 
+                                        destination_dataset = destination_dataset,
+                                        start_date = r, 
+                                        vi_version = vi_version, 
+                                        segs_table="{}.{}".format("gfw_research", segs_table),
+                                        output_version = output_version,
+                                        include_all_speeds = "False",
+                                        exclude_disabling = "True")
+
+    mr_no_disable_cmds.append(cmd)
+
+# test query
+test_cmd = mr_no_disable_cmds[0].split('|')[0]
+os.system(test_cmd)
+
+# Run commands
+utils.execute_commands_in_parallel(mr_no_disable_cmds)
+
+# Smooth reception quality that excludes gaps.
+
+for r in reception_dates:
+    print(str(r.date()))
+    utils.make_smooth_reception_table(start_date = r,
+                                      reception_measured_table = sat_reception_measured_no_disabling_tbl,
+                                      destination_dataset = destination_dataset,
+                                      destination_table = sat_reception_smoothed_no_disabling_tbl)
+
+# # Time lost to gaps
+#
+# Estimate the time lost to suspected disabling
+#
+# ### Interpolate positions during AIS gap events
+
+# Table for interpolated gap positions
+gap_positions_hourly_table = "gap_positions_hourly_{}".format(output_version)
+
+try:
+    client.get_table("{d}.{t}".format(d = destination_dataset, t = gap_positions_hourly_table))
+    print("Table {d}.{t} already exists".format(d = destination_dataset, t = gap_positions_hourly_table))
+except NotFound:
+    print("Table {d}.{t} is not found.".format(d = destination_dataset, t = gap_positions_hourly_table))
+    print("Creating table {d}.{t}".format(d = destination_dataset, t = gap_positions_hourly_table))
+    # create interpolated gap event positions table if needed
+    utils.make_bq_partitioned_table(destination_dataset, gap_positions_hourly_table)
+
+# Store commands
+gap_int_cmds = []
+for t in tp:
+    cmd = utils.make_hourly_gap_interpolation_table(date = t,
+                                                    output_version = output_version,
+                                                    destination_dataset = destination_dataset,
+                                                    destination_table = gap_positions_hourly_table)
+    gap_int_cmds.append(cmd)
+
+# test query
+test_cmd = gap_int_cmds[0].split('|')[0]
+os.system(test_cmd)
+
+# Run commands
+utils.execute_commands_in_parallel(gap_int_cmds)
+
+
 
 # # Copy Tables
 #

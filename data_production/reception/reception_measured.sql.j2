@@ -12,13 +12,36 @@ good_ssvid as (
       and activity.active_positions > 1000
       and best.best_vessel_class is not null
 ),
-
+{% if  no_disabling == "True" %}
+#
+# Get disabling events, not including the reception quality
+# filter
+#
+disabling AS (
+    SELECT
+    ssvid,
+    gap_id,
+    gap_start as gap_start_timestamp,
+    gap_end as gap_end_timestamp,
+    FROM `{{ destination_dataset }}.ais_gap_events_features_{{ output_version }}`
+    WHERE gap_hours >= 12
+    AND (off_distance_from_shore_m > 1852*50 AND on_distance_from_shore_m > 1852*50)
+    -- AND (positions_per_day_off > 5 AND positions_per_day_on > 5)
+    # Pull out gaps that start during the month. These gaps could extend longer than the month
+AND (DATE(gap_start) >= startdate() AND DATE(gap_start) <= enddate())
+    AND positions_X_hours_before_sat >= 19
+),
+{% endif %}
+#
+# Satellite positions for all vessels during timeperiod
+#
 sat_ssvid as (
     select ssvid,
            sat_positions,
            lat,
            lon,
            hour,
+           hour_midpoint,
            interpolated_speed_knots,
            _partitiontime date ,
            A_messages,
@@ -40,7 +63,40 @@ sat_ssvid as (
           AND NOT overlapping_and_short
       )
 ),
-
+{% if  no_disabling == "True" %}
+#
+# Remove interpolated positions that fall within time of suspected
+# disabling event
+#
+sat_ssvid_no_disabling AS (
+SELECT DISTINCT
+a.*
+FROM sat_ssvid a
+LEFT OUTER JOIN disabling b
+ON(a.ssvid = b.ssvid)
+WHERE (
+     b.gap_id IS NULL
+     OR (
+         b.gap_id IS NOT NULL
+         AND a.hour_midpoint NOT BETWEEN b.gap_start_timestamp AND b.gap_end_timestamp
+     )
+    )
+),
+{% endif %}
+#
+# Set position table to one including/excluding gaps
+#
+sat_ssvid_final AS (
+SELECT *
+{% if no_disabling == "True" %}
+FROM sat_ssvid_no_disabling
+{% else %}
+FROM sat_ssvid
+{% endif %}
+),
+#
+# Calculate positions per half day
+#
 by_half_day as (
     select ssvid,
            avg(interpolated_speed_knots) avg_interpolated_speed_knots,
@@ -51,17 +107,19 @@ by_half_day as (
            sum(A_messages) A_messages,
            sum(B_messages) B_messages,
            date
-    from sat_ssvid
+    from sat_ssvid_final
     group by ssvid, date, day_half
 ),
-
+#
+# Calculate reception quality
+#
 reception_quality as (
     select floor(a.lat) lat_bin,
            floor(a.lon) lon_bin,
            if(by_half_day.A_messages > 0, "A", "B") class,
            count(*) hours,
            avg(sat_pos_per_hour) * 24 sat_pos_per_day
-    from sat_ssvid a
+    from sat_ssvid_final a
     join by_half_day
     on    a.ssvid=by_half_day.ssvid
       and floor(a.hour/12) = by_half_day.day_half

@@ -293,12 +293,37 @@ def make_hourly_fishing_interpolation_table(destination_table,
     YYYY_MM_DD = date[:4] + "-" + date[4:6] + "-" + date[6:8]
     
     # Format command
-    cmd = '''jinja2 interpolation/hourly_fishing_interpolation.sql.j2    \
+    cmd = '''jinja2 interpolation/hourly_fishing_interpolation_byseg.sql.j2    \
        -D YYYY_MM_DD="{YYYY_MM_DD}" \
        | \
         bq query --replace \
         --destination_table={destination_dataset}.{destination_table}\
          --allow_large_results --use_legacy_sql=false '''.format(YYYY_MM_DD = date,
+                                                                 destination_dataset=destination_dataset,
+                                                                 destination_table=destination_table)
+    return cmd
+
+def make_hourly_gap_interpolation_table(destination_table,
+                                        destination_dataset,
+                                        date,
+                                        output_version):
+
+    # Update partition of destination table
+    destination_table = destination_table + "\$" + date.replace('-','')
+    
+    # Set date as YYYY-MM-DD format
+    YYYY_MM_DD = date[:4] + "-" + date[4:6] + "-" + date[6:8]
+    
+    # Format command
+    cmd = '''jinja2 interpolation/hourly_gap_interpolation.sql.j2    \
+       -D YYYY_MM_DD="{YYYY_MM_DD}" \
+       -D input_version="{gap_version}" \
+       -D destination_dataset="{destination_dataset}" \
+       | \
+        bq query --replace \
+        --destination_table={destination_dataset}.{destination_table}\
+         --allow_large_results --use_legacy_sql=false '''.format(YYYY_MM_DD = date,
+                                                                 gap_version = output_version,
                                                                  destination_dataset=destination_dataset,
                                                                  destination_table=destination_table)
     return cmd
@@ -346,7 +371,8 @@ def make_reception_measured_table(destination_table,
                                   vi_version,
                                   segs_table,
                                   output_version,
-                                  include_all_speeds="False"):
+                                  include_all_speeds="False",
+                                  exclude_disabling="False"):
     
     # Set end date to end of month of start date
     reception_start = str(start_date.date())
@@ -365,6 +391,7 @@ def make_reception_measured_table(destination_table,
        -D vi_version="{vi_version}" \
        -D segs_table="{segs_table}" \
        -D all_speeds="{all_speeds}" \
+       -D no_disabling="{no_disabling}" \
        -D destination_dataset="{destination_dataset}" \
        -D output_version="{output_version}" \
        | \
@@ -377,6 +404,7 @@ def make_reception_measured_table(destination_table,
                                                                 vi_version = vi_version,
                                                                 segs_table = segs_table,
                                                                 all_speeds = include_all_speeds,
+                                                                no_disabling = exclude_disabling,
                                                                 output_version = output_version)
     return cmd
 
