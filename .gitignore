@@ -148,4 +148,4 @@ rsconnect/
 *.ipynb
 
 # Paper figures
-Analysis/figures/*
+Analysis/figures*/*
