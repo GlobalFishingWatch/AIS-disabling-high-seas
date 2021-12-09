@@ -540,6 +540,12 @@ and gap_id = '{gap_id}'
 group by lat_index, lon_index, vessel_class, is_real_gap, over_200_nm, flag, over_50nm,
 over_one_week, over_four_weeks, over_two_weeks'''
 
+# %%
+gap_char_query = '''SELECT  ssvid,vessel_class,
+   gap_hours, gap_distance_m/1000 as gap_distance_km,
+ from `world-fishing-827.proj_ais_gaps_catena.ais_gap_events_features_v20210722`
+WHERE gap_id = "{gap_id}"  '''
+
 
 # %% [markdown]
 # ## Visualization functions
@@ -548,6 +554,8 @@ over_one_week, over_four_weeks, over_two_weeks'''
 def get_gap_rasters(gap_id):    
     dfr = gbq(q_raster_template.format(scale=scale, gap_id = gap_id))
     dfi = gbq(q_interpolate_template.format(scale=scale, gap_id = gap_id))
+    dfg = gbq(gap_char_query.format(gap_id =gap_id))
+
 
     gap_raster = psm.rasters.df2raster(dfr,
                                    'lon_index', 'lat_index',
@@ -558,20 +566,17 @@ def get_gap_rasters(gap_id):
                                    'gap_hours', xyscale=scale, 
                                     per_km2=True, origin = 'lower')
     
-    return gap_raster, gap_interpolate
+    return dfg, gap_raster, gap_interpolate
 
 
 # %%
-def map_gap_raster(raster, extent, gs, norm, cmap='fishing', colorbar_label='hours per 1000/km$^{2}$'):
+def map_gap_raster(raster, extent, gs, norm, cmap='fishing', colorbar_label='hours per 1000/km$^{2}$', subplot_label=''):
     with pyseas.context(psm.styles.dark):
         with pyseas.context({'text.color' : '#000000'}):
             with plt.rc_context({
                         "axes.spines.right": False,
                         "axes.spines.top": False,
-                        'figure.facecolor': 'white',
-                        'axes.facecolor': 'white',
                         'legend.fontsize': 12, 
-                        # 'legend',frameon=False)
             }):
                 ax = psm.create_map(gs, extent=extent)
                 im = psm.add_raster(raster, ax=ax,
@@ -580,9 +585,10 @@ def map_gap_raster(raster, extent, gs, norm, cmap='fishing', colorbar_label='hou
                                 origin='lower'
                                 )
                 psm.add_land()
-                cb = psm.colorbar.add_colorbar(im, ax=ax, label=colorbar_label, 
-                                               loc='bottom', format='%.1f')
+                cb = psm.colorbar.add_colorbar(im, ax=ax, label=colorbar_label, format='%.1f', 
+                                               loc='bottom', right_edge=0.9, hspace=0.05, wspace=0.05)
                 ax.spines['geo'].set_visible(False)
+                ax.text(-0.08, 1.08, subplot_label, ha='left', va='top', transform=ax.transAxes, fontweight='bold', fontsize=14)
     
     return ax
 
@@ -596,39 +602,50 @@ scale = 1
 # %%
 # Gap Example 1
 gap_id_1 = 'ea44f17ad323523620da88f5ca424f76'
-gap_raster_1, gap_interpolate_1 = get_gap_rasters(gap_id_1)
+gap_info_1, gap_raster_1, gap_interpolate_1 = get_gap_rasters(gap_id_1)
 
 # Gap Example 2
 gap_id_2 = '90445f07692616180e808a01c56e2519'
-gap_raster_2, gap_interpolate_2 = get_gap_rasters(gap_id_2)
+gap_info_2, gap_raster_2, gap_interpolate_2 = get_gap_rasters(gap_id_2)
 
 # Gap Example 3
 gap_id_3 = 'ad8379a913d1d4f9ce4264aad409820d'
-gap_raster_3, gap_interpolate_3 = get_gap_rasters(gap_id_3)
+gap_info_3, gap_raster_3, gap_interpolate_3 = get_gap_rasters(gap_id_3)
 
 
 # %%
-fig = plt.figure(figsize=(8, 8), dpi=300)#, constrained_layout=True)
+fig = plt.figure(figsize=(8, 10), dpi=300, constrained_layout=True)
 gs = fig.add_gridspec(3,2, wspace=0.0, hspace=0.1)
 
 # Gap Example 1
 extent = -110.0, -80.0, -15.0, 5.0
 norm = mpcolors.Normalize(vmin=0, vmax=5)
-ax = map_gap_raster(gap_interpolate_1*1000, extent, gs[0,0], norm)
-ax = map_gap_raster(gap_raster_1*1000, extent, gs[0,1], norm)
+ax_a = map_gap_raster(gap_interpolate_1*1000, extent, gs[0,0], norm, subplot_label='A.')
+ax_b = map_gap_raster(gap_raster_1*1000, extent, gs[0,1], norm, subplot_label='B.')
 
 # Gap Example 2
 extent = -170.0, -80.0, -25.0, 25.0
 norm = mpcolors.Normalize(vmin=0, vmax=0.2)
-ax = map_gap_raster(gap_interpolate_2*1000, extent, gs[1,0], norm)
-ax = map_gap_raster(gap_raster_2*1000, extent, gs[1,1], norm)
+ax_c = map_gap_raster(gap_interpolate_2*1000, extent, gs[1,0], norm, subplot_label='C.')
+ax_d = map_gap_raster(gap_raster_2*1000, extent, gs[1,1], norm, subplot_label='D.')
 
 # Gap Example 3
 extent = -170.0, -80.0, -30.0, 30.0
 norm = mpcolors.Normalize(vmin=0, vmax=0.3)
-ax = map_gap_raster(gap_interpolate_3*1000, extent, gs[2,0], norm)
-ax = map_gap_raster(gap_raster_3*1000, extent, gs[2,1], norm)
+ax_e = map_gap_raster(gap_interpolate_3*1000, extent, gs[2,0], norm, subplot_label='E.')
+ax_f = map_gap_raster(gap_raster_3*1000, extent, gs[2,1], norm, subplot_label='F.')
 
-plt.tight_layout()
+
+ax_a.text(0.5,1.2, 'Linear Interpolation Method', ha='center', va='top', fontsize=14, transform=ax_a.transAxes)
+ax_b.text(0.5,1.2, 'Raster Method', ha='center', va='top', fontsize=14, transform=ax_b.transAxes)
+ax_a.text(-0.3,0.5, f'{round(gap_info_1.iloc[0].gap_hours)} hours\n{round(gap_info_1.iloc[0].gap_distance_km)}km', 
+          ha='center', va='center', fontsize=14, transform=ax_a.transAxes)
+ax_c.text(-0.2,0.5, f'{round(gap_info_2.iloc[0].gap_hours)} hours\n{round(gap_info_2.iloc[0].gap_distance_km)}km', 
+          ha='center', va='center', fontsize=14, transform=ax_c.transAxes)
+ax_e.text(-0.25,0.5, f'{round(gap_info_3.iloc[0].gap_hours)} hours\n{round(gap_info_3.iloc[0].gap_distance_km)}km', 
+          ha='center', va='center', fontsize=14, transform=ax_e.transAxes)
+
+
+plt.savefig(figures_folder + f"example_gaps_comparing_methods.png", dpi=300, bbox_inches="tight")
 
 # %%
