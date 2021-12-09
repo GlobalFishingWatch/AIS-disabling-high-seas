@@ -39,9 +39,12 @@ def gbq(q):
 
 # %%
 figures_folder = './figures/'
-
+precursors_folder = './figures/precursors/'
 if not os.path.exists(figures_folder):
     os.makedirs(figures_folder)
+    
+if not os.path.exists(precursors_folder):
+    os.makedirs(precursors_folder)
 
 
 # %% [markdown]
@@ -127,7 +130,7 @@ def plot_probability_raster(df_raster, days, distance_km, vmin=.001, vmax=1,
     axs[0].text(-0.2, 1.2, fig_label, ha='left', va='top', transform=axs[0].transAxes, fontweight='bold')
     
     if save:
-        plt.savefig(figures_folder + f"probability_raster_{distance_km}km_{days}days.png", dpi=300, bbox_inches = 'tight')
+        plt.savefig(precursors_folder + f"S15_probability_raster_{distance_km}km_{days}days.png", dpi=300, bbox_inches = 'tight')
 
 
 # %%
@@ -186,7 +189,7 @@ images = [[Image.open(img_2days), Image.open(img_8days)],
           [Image.open(img_14days), Image.open(img_30days)]]
 
 joined_image = join_images(*images)
-joined_image.save(figures_folder + f"probability_raster_{distance_km}km_all.png", format='png')
+joined_image.save(figures_folder + f"S15_probability_raster_{distance_km}km_all.png", format='png')
 
 # %%
 joined_image
@@ -646,6 +649,188 @@ ax_e.text(-0.25,0.5, f'{round(gap_info_3.iloc[0].gap_hours)} hours\n{round(gap_i
           ha='center', va='center', fontsize=14, transform=ax_e.transAxes)
 
 
-plt.savefig(figures_folder + f"example_gaps_comparing_methods.png", dpi=300, bbox_inches="tight")
+plt.savefig(figures_folder + f"S16_example_gaps_comparing_methods.png", dpi=300, bbox_inches="tight")
+
+# %%
+
+# %% [markdown]
+# # How much activity in the raster method is close to the straight line between points?
+#
+# If we interpolate a line between the start and end of a gap, how much of the activity using the raster method will be within 1 degree -- or 111 km -- of this line?
+
+# %%
+close_to_line_query = '''
+create temp function map_label(label string)
+as (
+  case when label ="drifting_longlines" then "drifting_longlines"
+  when label ="purse_seines" then "purse_seines"
+  when label ="other_purse_seines" then "purse_seines"
+  when label ="tuna_purse_seines" then "purse_seines"
+  when label ="cargo_or_tanker" then "cargo_or_tanker"
+  when label ="cargo" then "cargo_or_tanker"
+  when label ="tanker" then "cargo_or_tanker"
+  when label ="squid_jigger" then "squid_jigger"
+  when label ="tug" then "tug"
+  when label = "trawlers" then "trawlers"
+  else "other" end
+);
+
+create temp function map_distance(d float64)
+as (
+case when d < 10/2+3/2 then 3
+when d >= 10/2+3/2 and d < 15 then 10
+when d >= 15 and d <30 then 20
+when d >= 30 and d < 60 then 40
+when d >= 60 and d < 120 then 80
+when d >= 120 and d <240 then 160
+when d >= 240 and d < 480 then 320
+when d >= 480 and d < 960 then 640
+when d >= 960 then 1280
+else null end
+);
+
+create temp function map_hours_diff(h float64) as (
+case when h < 12 + 18.0 then 12
+when h >= 12 + 18.0 and h < 36.0 then 24
+when h >= 36 and h < 72 then 48
+ when h >= 72 and h < 120 then 96
+ when h >= 120 and h < 168 then 144
+ when h >= 168 and h < 216 then 192
+ when h >= 216 and h < 264 then 240
+ when h >= 264 and h < 312 then 288
+ when h >= 312 and h < 360 then 336
+ when h >= 360 and h < 408 then 384
+ when h >= 408 and h < 456 then 432
+ when h >= 456 and h < 540 then 480
+ when h >= 540 and h < 660 then 600
+ when h >= 660 and h < 780 then 720
+ when h >= 780 then 840
+
+else null end
+);
+
+
+
+with
+
+gap_table as
+(select
+        ssvid,
+        off_lat,
+        off_lon,
+        on_lat,
+        on_lon,
+        gap_hours,
+        gap_distance_m / 1000 as gap_distance_km,
+        st_geogpoint(off_lon, off_lat) as gap_start_point,
+        st_geogpoint(on_lon, on_lat) as gap_end_point,
+        (positions_per_day_off > 5 and positions_per_day_on > 5)
+        and positions_x_hours_before_sat >= 19 as is_real_gap,
+        gap_hours / 24 > 14 as over_two_weeks
+ -- for spatial allocation, require start or end to be larger than 50 nautical miles
+ -- to avoid counting gaps that are in port  
+from
+  `world-fishing-827.proj_ais_gaps_catena.ais_gap_events_features_v20210722`
+    where
+        gap_hours >= 12
+         and (
+             off_distance_from_shore_m > 1852 * 50 and on_distance_from_shore_m > 1852 * 50
+        )
+        and (date(gap_start) >= '2017-01-01' and date(gap_end) <= '2019-12-31')
+
+
+),
+
+
+
+vessel_info as (
+    select
+        ssvid,
+        map_label(best.best_vessel_class) as vessel_class
+from
+  `world-fishing-827.gfw_research.vi_ssvid_v20210301`
+    where
+        on_fishing_list_best
+),
+
+with_mappings as (
+    select
+        *,
+        map_distance(gap_distance_km) as distance_km,
+        map_hours_diff(gap_hours) as hours_diff
+    from
+        gap_table
+    join
+        vessel_info
+        using (ssvid)),
+
+gap_raster_norm as (
+    select
+        x,
+        y,
+        hours,
+        vessel_class,
+        hours_diff,
+        distance_km,
+        days_to_start,
+        dist_to_line_km
+    from
+        proj_ais_gaps_catena.raster_gaps_norm_v20211021
+),
+
+
+mapped_to_raster as
+(
+    select
+        *
+ except(dist_to_line_km, hours),
+        -- if the gap distance is bigger, expand
+        dist_to_line_km * gap_distance_km / distance_km as dist_to_line_km,
+        gap_hours * hours / hours_diff as hours
+    from
+        gap_raster_norm
+    join
+        with_mappings
+        using (vessel_class, distance_km, hours_diff)
+
+)
+
+select
+    floor(gap_hours / 24) as gap_days,
+    sum(hours) as hours,
+    sum(if(dist_to_line_km < 111, hours, 0)) / sum(hours) as frac_within_line,
+    sum(if(dist_to_line_km < 111, hours, 0)) as hours_close
+from
+    mapped_to_raster
+group by
+    gap_days
+order by
+    gap_days
+'''
+
+df_close_to_line = gbq(close_to_line_query)
+
+# %%
+df_close_to_line['weeks'] = df_close_to_line.gap_days.apply(lambda x: int(x/7+1))
+df_grouped = df_close_to_line.groupby('weeks').sum()
+df_grouped['frac'] = df_grouped.hours_close/df_grouped.hours
+
+with plt.rc_context({
+            "axes.spines.right": False,
+            "axes.spines.top": False,
+            "figure.facecolor": "white",
+            "axes.facecolor": "white",
+            'legend.fontsize': 12,
+            }):
+    fig = plt.figure(figsize=(6,4))
+    df_grouped[df_grouped.index<7]['frac'].plot(kind='bar')
+    plt.ylabel("Fraction of spatially allocated time in gaps", fontsize=11)
+    plt.xlabel("Duration of disabling event (weeks)", fontsize=11)
+    plt.xticks(rotation=0, fontsize=10)
+    plt.yticks(fontsize=10)
+
+    plt.tight_layout()
+    plt.savefig(figures_folder + f"S17_raster_method_activity_within_1deg_of_line.png", dpi=300, bbox_inches="tight")
+    plt.show()
 
 # %%

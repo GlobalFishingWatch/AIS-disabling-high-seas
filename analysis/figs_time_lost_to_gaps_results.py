@@ -690,7 +690,7 @@ with psm.context(psm.styles.light):
     cb_ax.set_xlabel("Fraction of activity obscured\nby suspected disabling", labelpad=10)
     cb_ax.set_ylabel("Estimated total\nfishing vessel\nactivity\n(hours per km$^{2}$)", labelpad=10)
 
-plt.savefig(figures_folder + "supps18_comparing_raster_interpolation.png", dpi=300, bbox_inches = 'tight')
+plt.savefig(figures_folder + "S18_comparing_raster_interpolation.png", dpi=300, bbox_inches = 'tight')
 plt.show()
 
 # %%
