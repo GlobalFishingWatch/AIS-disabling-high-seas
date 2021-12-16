@@ -1,6 +1,6 @@
 # Description
 
-This folder contains the code to run model selection for a model to predict if a gap is intentional disabling.  
+This folder contains the code to run model selection for a model to predict if a gap is a suspected disabling event.  
 To run the model selection, run the `model_selection.ipynb` notebook, which can be created from `model_selection.py` using the `jupytext` library.  
 Please note, the code currently requires access to the Global Fishing Watch BigQuery project. However, all model outputs necessary to replicate the model selection process independently of the code in this fodler are described below in the **Saved Model** section.
 
