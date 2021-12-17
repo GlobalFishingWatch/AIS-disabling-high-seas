@@ -1,0 +1,343 @@
+-- This query generates the ais_gap_events_labeled_vYYYYMMDD table
+-- This table includes gaps at all distances from shore so an additional filter must be put in
+-- place before performing further analyses
+
+CREATE TEMP FUNCTION start_date() AS (date('2017-01-01'));
+CREATE TEMP FUNCTION end_date() AS (date('2019-12-31'));
+
+WITH
+
+-- All gaps with necessary features for the 
+-- specified date range
+gaps AS (
+    SELECT
+        *
+    FROM `{{GAPS_FEATURES}}`
+    WHERE date(gap_start) >= start_date()
+        AND date(gap_end) <= end_date()
+        AND extract(year FROM gap_start) = extract(year FROM gap_end)
+),
+
+-- Some gaps appear to be repeated, with
+-- multiple end dates. Filter gaps to only 
+-- row with latest end date
+gaps_filtered AS (
+    SELECT
+        *
+    FROM(
+        SELECT
+            *,
+            row_number() OVER(
+                PARTITION BY gap_id ORDER BY gap_end
+            ) AS end_date_row
+        FROM gaps
+    )
+    WHERE end_date_row = 1
+),
+
+-- Get Exact Earth Data
+ee AS (
+    (SELECT
+        timestamp,
+        mmsi AS ssvid,
+        latitude AS lat,
+        longitude AS lon,
+        (CASE WHEN message_id IN ('1', '2', '3') THEN 'A'
+                WHEN message_id IN ('18', '19') THEN 'B' END) AS class
+        FROM
+            `world-fishing-827.ais_exact_earth.2017_csv_data_formated_and_partitioned`
+        WHERE date(timestamp) BETWEEN start_date() AND end_date()
+            AND latitude IS NOT NULL
+            AND longitude IS NOT NULL
+            AND mmsi IN (SELECT ssvid FROM gaps_filtered))
+    UNION ALL
+    (SELECT
+        timestamp,
+        mmsi AS ssvid,
+        latitude AS lat,
+        longitude AS lon,
+        (CASE WHEN message_id IN ('1', '2', '3') THEN 'A'
+                WHEN message_id IN ('18', '19') THEN 'B' END) AS class
+        FROM
+            `world-fishing-827.ais_exact_earth.2018_csv_data_formated_and_partitioned`
+        WHERE date(timestamp) BETWEEN start_date() AND end_date()
+            AND latitude IS NOT NULL
+            AND longitude IS NOT NULL
+            AND mmsi IN (SELECT ssvid FROM gaps_filtered))
+    UNION ALL
+    (SELECT
+        timestamp,
+        mmsi AS ssvid,
+        latitude AS lat,
+        longitude AS lon,
+        (CASE WHEN message_id IN ('1', '2', '3') THEN 'A'
+                WHEN message_id IN ('18', '19') THEN 'B' END) AS class
+        FROM
+            `world-fishing-827.ais_exact_earth.2019_csv_data_formated_and_partitioned`
+        WHERE date(timestamp) BETWEEN start_date() AND end_date()
+            AND latitude IS NOT NULL
+            AND longitude IS NOT NULL
+            AND mmsi IN (SELECT ssvid FROM gaps_filtered))
+),
+
+-- Thin EE data to one position per minute
+dedup_ee AS (
+    SELECT
+        * EXCEPT (row_number)
+    FROM (
+            SELECT
+                *,
+                row_number() OVER (
+                    PARTITION BY
+                        ssvid, timestamp, cast(lat * 1000000 AS INT64),
+                        cast(
+                            lon * 1000000 AS INT64
+                        )
+                    ORDER BY
+                        timestamp,
+                        lat,
+                        lon) AS row_number
+            FROM
+                ee)
+    WHERE row_number = 1
+),
+
+
+-- Look for EE positions in the period that spans from 48 hours
+-- before when a gap starts to 48 hours after the gap ends
+-- including the gap itself. If there is at least one point,
+-- set a flag that this gap is appropriate to use for labeling.
+ee_48h_before_after AS (
+    SELECT
+        ssvid,
+        gap_id,
+        gap_start,
+        gap_end,
+        if(count(*) > 0, TRUE, FALSE) AS gap_in_ee
+    FROM (
+        SELECT
+            *
+        FROM gaps_filtered
+        LEFT JOIN dedup_ee
+                  USING (ssvid)
+        WHERE timestamp >= timestamp_sub(gap_start, INTERVAL 48 hour)
+            AND timestamp <= timestamp_add(gap_end, INTERVAL 48 hour)
+    )
+    GROUP BY 1, 2, 3, 4
+),
+
+-- Join gap events with VALID EE positions
+-- Calculate time difference between each EE point
+-- and the gap start/end position 
+gaps_with_valid_ee AS (
+    SELECT
+        *,
+        timestamp_diff(
+            timestamp,
+            lag(timestamp) OVER(PARTITION BY ssvid, gap_id ORDER BY timestamp),
+            SECOND
+        ) / 60 / 60 AS ee_gap,
+        timestamp_diff(
+            timestamp, gap_start, SECOND
+        ) / 60 / 60 AS time_since_gap_start,
+        timestamp_diff(
+            gap_end, timestamp, SECOND
+        ) / 60 / 60 AS time_until_gap_end
+    FROM gaps_filtered
+    LEFT JOIN dedup_ee
+        USING (ssvid)
+    WHERE timestamp > gap_start
+        AND timestamp < gap_end
+        AND lat < 91
+        AND lon < 181
+),
+
+-- Join gap events with INVALID EE positions
+-- Calculate the number of invalid positions
+-- inside the gap
+gaps_invalid_ee AS (
+    SELECT
+        ssvid,
+        gap_id,
+        gap_start,
+        gap_end,
+        count(*) AS ee_positions_invalid
+    FROM
+        (
+            SELECT
+                *
+            FROM gaps_filtered
+            LEFT JOIN dedup_ee
+                USING (ssvid)
+            WHERE timestamp > gap_start
+                AND timestamp < gap_end
+                AND lat = 91
+                AND lon = 181
+        )
+    GROUP BY 1, 2, 3, 4
+),
+
+-- Summarize number of positions within gap and the 
+-- time between the first/last exact earth positions
+-- Filter out invalid positions from max_ee_gap calculation
+gap_ee_pos AS (
+    SELECT
+        *,
+        timestamp_diff(
+            gap_end, max_ee_timestamp, SECOND
+        ) / 60 / 60 AS time_since_last_ee_pos,
+        timestamp_diff(
+            min_ee_timestamp, gap_start, SECOND
+        ) / 60 / 60 AS time_until_first_ee_pos
+    FROM (
+        SELECT
+            ssvid,
+            gap_id,
+            gap_start,
+            gap_end,
+            count(timestamp) AS ee_positions,
+            min(timestamp) AS min_ee_timestamp,
+            max(timestamp) AS max_ee_timestamp,
+            CASE count(timestamp)
+                WHEN 0 THEN NULL
+                WHEN 1 THEN 0
+                ELSE max(ee_gap)
+            END AS max_ee_gap
+        FROM gaps_with_valid_ee
+        GROUP BY 1, 2, 3, 4
+    )
+),
+
+
+-- Summarize number of positions within gap but more 
+-- than an hour after the gap start or before the gap end
+gap_ee_pos_1hr AS (
+    SELECT
+        ssvid,
+        gap_id,
+        gap_start,
+        gap_end,
+        count(timestamp) AS ee_positions_over_1hr
+    FROM (
+        SELECT
+            *
+        FROM gaps_with_valid_ee
+        WHERE time_since_gap_start > 1
+            AND time_until_gap_end > 1
+    )
+    GROUP BY 1, 2, 3, 4
+),
+
+-- Summarize number of positions within gap but more 
+-- than four hours after the gap start or before the gap end
+gap_ee_pos_4hr AS (
+    SELECT
+        ssvid,
+        gap_id,
+        gap_start,
+        gap_end,
+        count(timestamp) AS ee_positions_over_4hr
+    FROM (
+        SELECT
+            *
+        FROM gaps_with_valid_ee
+        WHERE time_since_gap_start > 4
+            AND time_until_gap_end > 4
+    )
+    GROUP BY 1, 2, 3, 4
+),
+
+-- Summarize number of positions within gap but more 
+-- than six hours after the gap start or before the gap end
+gap_ee_pos_6hr AS (
+    SELECT
+        ssvid,
+        gap_id,
+        gap_start,
+        gap_end,
+        count(timestamp) AS ee_positions_over_6hr
+    FROM (
+        SELECT
+            *
+        FROM gaps_with_valid_ee
+        WHERE time_since_gap_start > 6
+            AND time_until_gap_end > 6
+    )
+    GROUP BY 1, 2, 3, 4
+),
+
+-- Join summaries together.
+-- Order the columns a bit to group similar columns.
+gap_summary AS (
+    SELECT
+        * EXCEPT (
+            ee_positions,
+            ee_positions_invalid,
+            ee_positions_over_1hr,
+            ee_positions_over_4hr,
+            ee_positions_over_6hr,
+            max_ee_gap,
+            gap_in_ee
+        ),
+        if(gap_in_ee, ee_positions, NULL) AS ee_positions,
+        if(gap_in_ee, ee_positions_invalid, NULL) AS ee_positions_invalid,
+        if(gap_in_ee, ee_positions_over_1hr, NULL) AS ee_positions_over_1hr,
+        if(gap_in_ee, ee_positions_over_4hr, NULL) AS ee_positions_over_4hr,
+        if(gap_in_ee, ee_positions_over_6hr, NULL) AS ee_positions_over_6hr,
+        if(gap_in_ee, max_ee_gap, NULL) AS max_ee_gap,
+        greatest(
+            max_ee_gap,
+            ifnull(time_since_last_ee_pos, 0),
+            ifnull(time_until_first_ee_pos, 0)
+        ) AS max_gap,
+        ifnull(gap_in_ee, FALSE) AS gap_in_ee
+    FROM (
+        SELECT
+            * EXCEPT(
+                ee_positions,
+                ee_positions_invalid,
+                ee_positions_over_1hr,
+                ee_positions_over_4hr,
+                ee_positions_over_6hr,
+                max_ee_gap
+            ),
+            ifnull(ee_positions, 0) AS ee_positions,
+            ifnull(ee_positions_invalid, 0) AS ee_positions_invalid,
+            ifnull(ee_positions_over_1hr, 0) AS ee_positions_over_1hr,
+            ifnull(ee_positions_over_4hr, 0) AS ee_positions_over_4hr,
+            ifnull(ee_positions_over_6hr, 0) AS ee_positions_over_6hr,
+            ifnull(max_ee_gap, gap_hours) AS max_ee_gap
+        FROM gaps
+        LEFT JOIN gap_ee_pos
+            USING (ssvid, gap_id, gap_start, gap_end)
+        LEFT JOIN gaps_invalid_ee
+            USING (ssvid, gap_id, gap_start, gap_end)
+        LEFT JOIN gap_ee_pos_1hr
+            USING (ssvid, gap_id, gap_start, gap_end)
+        LEFT JOIN gap_ee_pos_4hr
+            USING (ssvid, gap_id, gap_start, gap_end)
+        LEFT JOIN gap_ee_pos_6hr
+            USING (ssvid, gap_id, gap_start, gap_end)
+        LEFT JOIN ee_48h_before_after
+            USING (ssvid, gap_id, gap_start, gap_end)
+    )
+)
+
+
+-- Filter gaps to those in Exact Earth and at least 12 hours long,
+-- and add on labeled classes.
+SELECT
+    *,
+    if(max_gap >= 12, 1, 0) AS actual_gap_class,
+    if(
+        (
+            max_gap >= 12 AND ee_positions_over_4hr = 0
+        ) OR (max_gap >= 24 AND max_gap > 0.5 * gap_hours),
+        1,
+        0
+    ) AS actual_gap_class_deprecated
+FROM
+    gap_summary
+WHERE
+    gap_in_ee
+    AND gap_hours >= 12
