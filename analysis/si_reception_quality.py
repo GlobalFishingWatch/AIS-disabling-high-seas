@@ -305,6 +305,76 @@ with pyseas.context(pyseas.styles.light):
 plt.savefig("../results/gap_figures_{}/figure_si_reception_residuals.png".format(output_version),dpi=200, bbox_inches='tight') 
 # -
 
+# ### Areas predicted above/below the threshold
+#
+# Identify areas where predicted reception quality results in a cell being above/below the five position threshold relative to the measured reception quality.
+
+# +
+# Identify areas where our average prediction results in a cell being below threshold
+predicted = sat_residuals.copy()
+
+predicted['over_under_predicted'] = 0
+predicted.loc[(predicted['positions_per_day_measured'] > 5) & (predicted['positions_per_day'] < 5),'over_under_predicted'] = -1
+predicted.loc[(predicted['positions_per_day_measured'] < 5) & (predicted['positions_per_day'] > 5),'over_under_predicted'] = 1
+# -
+
+predicted.over_under_predicted.unique()
+
+# +
+# Pull out class A and B capped residuals
+class_a_under = pyseas.maps.rasters.df2raster(predicted[predicted['class'] == 'A'], 
+                                                  'lon_bin', 'lat_bin','over_under_predicted',
+                                                  xyscale=1, 
+                                                  per_km2=False)
+
+class_b_under = pyseas.maps.rasters.df2raster(predicted[predicted['class'] == 'B'], 
+                                                  'lon_bin', 'lat_bin','over_under_predicted',
+                                                  xyscale=1, 
+                                                  per_km2=False)
+
+# Plot
+fig = plt.figure(figsize=(10,10))
+
+titles = ["Class A",
+          "Class B"]
+
+with pyseas.context(pyseas.styles.light): 
+
+    axes = []
+    ims = []
+
+    # Class A
+    grid = class_a_under
+
+    ax, im = pyseas.maps.plot_raster(grid,
+                                     subplot=(2,1,1),
+                                     cmap = colors.ListedColormap(['blue','white','red']),
+                                     origin = 'upper'
+                                    )
+
+    ax.set_title("Class A")
+    ax.text(-150*1000*100,80*1000*100, "A.")
+
+    cbar.set_label(f"Areas where under predicted reception quality below threshold")
+    
+    # Class B    
+    grid = class_b_under
+
+    ax, im = pyseas.maps.plot_raster(grid,
+                                     subplot=(2,1,2),
+                                     cmap = colors.ListedColormap(['blue','white','red']),                                  
+                                     origin = 'upper'
+                                    )
+
+    ax.set_title("Class B")
+    ax.text(-150*1000*100,80*1000*100, "B.")
+
+    cbar.set_label(f"Areas where under predicted reception quality below threshold")
+
+    plt.tight_layout(pad=0.5)
+
+# -
+
 # ### Residual histograms
 
 # +
@@ -336,6 +406,11 @@ ax2.title.set_text('Class B')
 # Save figure
 plt.savefig('../results/gap_figures_{}/figure_si_residual_distribution.png'.format(output_version), dpi=200, facecolor=plt.rcParams['pyseas.fig.background'])
 # -
+
+# Summary statistics for residuals:
+
+sat_residuals[sat_residuals['class'] == 'A'].median() # 2.3
+# sat_residuals[sat_residuals['class'] == 'B'].median() # -1.2
 
 # ## Gap length
 #
