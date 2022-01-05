@@ -143,3 +143,9 @@ rsconnect/
 
 # Mac
 .DS_Store
+
+# Jupiter
+*.ipynb
+
+# Paper figures
+Analysis/figures*/*
