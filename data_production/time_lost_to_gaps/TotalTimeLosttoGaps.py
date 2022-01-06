@@ -7,7 +7,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.6.0
+#       jupytext_version: 1.13.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -38,9 +38,9 @@ WITH
 --
 good_enough_reception as (
     SELECT
-    lat_bin, 
+    lat_bin,
     lon_bin
-    FROM `world-fishing-827.proj_ais_gaps_catena.sat_reception_smoothed_one_degree_v20210722` 
+    FROM `world-fishing-827.proj_ais_gaps_catena.sat_reception_smoothed_one_degree_v20210722`
     WHERE class = "A"
     GROUP BY lat_bin, lon_bin
     HAVING AVG(positions_per_day) > 5
@@ -50,7 +50,7 @@ good_enough_reception as (
 -- to purse_seines in the fishing_activity table
 --
 fishing_activity AS(
-    SELECT 
+    SELECT
     IF(vessel_class IN ('trawlers','drifting_longlines','purse_seines','squid_jigger'), vessel_class, 'other_geartypes') as vessel_class,
     IF(flag IN ('CHN','TWN','ESP','KOR'), flag, 'other_flags') as flag,
     hours_in_gaps_under_12
@@ -64,7 +64,7 @@ fishing_activity AS(
 -- Summarize activity by vessel class for fishing vessels on the high seas
 --
 fishing_activity_by_class AS (
-    SELECT 
+    SELECT
     ROUND(SUM(hours_in_gaps_under_12)) hours,
     vessel_class as vessel_group
     FROM fishing_activity
@@ -74,17 +74,17 @@ fishing_activity_by_class AS (
 -- Summarize activity by vessel class for fishing vessels on the high seas
 --
 fishing_activity_by_flag AS (
-    SELECT 
+    SELECT
     ROUND(SUM(hours_in_gaps_under_12)) hours,
     flag as vessel_group
-    FROM fishing_activity 
+    FROM fishing_activity
     GROUP BY flag
 ),
 --
 -- Summarize activity for all fishing vessels on the high seas
 --
 total_fishing AS (
-    SELECT 
+    SELECT
     SUM(hours) hours,
     "all vessels" as vessel_group
     FROM fishing_activity_by_class
@@ -93,7 +93,7 @@ total_fishing AS (
 -- Combine activity by vessel class with total activity of fishing vessels
 --
 total_fishing_activity_by_class as (
-    SELECT * FROM fishing_activity_by_class 
+    SELECT * FROM fishing_activity_by_class
     UNION ALL
     SELECT * FROM total_fishing
 ),
@@ -104,7 +104,7 @@ all_disabling_events AS (
     SELECT
         gap_id,
         -- adjust vessel classes to match aggregation David did in gridded activity tables...
-        CASE 
+        CASE
             WHEN vessel_class IN ('trawlers','drifting_longlines','squid_jigger') THEN vessel_class
             WHEN vessel_class = 'tuna_purse_seines' THEN 'purse_seines'
             ELSE 'other_geartypes'
@@ -121,47 +121,47 @@ all_disabling_events AS (
     AND positions_X_hours_before_sat >= 19
     AND off_distance_from_shore_m > 1852 * 50
     AND on_distance_from_shore_m > 1852 * 50
-    AND DATE(gap_start) >= '2017-01-01' 
+    AND DATE(gap_start) >= '2017-01-01'
     AND DATE(gap_end) <= '2019-12-31'
 ),
 --
 -- Summarize the number of disabling events by vessel class and for all vessels
 --
 gaps_summarized_by_class AS (
-    SELECT 
+    SELECT
     vessel_class as vessel_group,
     COUNT(*) as disabling_events,
     SUM(IF(NOT over_two_weeks, 1, 0)) disabling_events_2w,
     SUM(IF(NOT over_four_weeks, 1, 0)) disabling_events_4w
-    FROM all_disabling_events 
+    FROM all_disabling_events
     GROUP BY 1
-    
-    UNION ALL 
-    
-    SELECT 
+
+    UNION ALL
+
+    SELECT
     'all vessels' as vessel_group,
     COUNT(*) as disabling_events,
     SUM(IF(NOT over_two_weeks, 1, 0)) disabling_events_2w,
     SUM(IF(NOT over_four_weeks, 1, 0)) disabling_events_4w
-    FROM all_disabling_events 
+    FROM all_disabling_events
 ),
 --
 -- Summarize the number of disabling events by flag
 --
 gaps_summarized_by_flag AS (
-    SELECT 
+    SELECT
     flag as vessel_group,
     COUNT(*) as disabling_events,
     SUM(IF(NOT over_two_weeks, 1, 0)) disabling_events_2w,
     SUM(IF(NOT over_four_weeks, 1, 0)) disabling_events_4w
-    FROM all_disabling_events 
+    FROM all_disabling_events
     GROUP BY 1
 ),
 --
 --
 --
 gaps AS (
-    SELECT 
+    SELECT
     * EXCEPT(vessel_class, flag),
     IF(vessel_class IN ('trawlers','drifting_longlines','purse_seines','squid_jigger'), vessel_class, 'other_geartypes') as vessel_class,
     IF(flag IN ('CHN','TWN','ESP','KOR'), flag, 'other_flags') as flag
@@ -175,7 +175,7 @@ gaps AS (
 -- Summarize the time spent in gaps for all vessels
 --
 total_gaps AS (
-    select 
+    select
     sum(if(is_real_gap, gap_hours, 0)) real_gap_hours,
     round(sum(if(is_real_gap, gap_hours, 0)) / 24) real_gap_days,
     sum(gap_hours) gap_hours,
@@ -191,7 +191,7 @@ total_gaps AS (
 -- Summarize the time spent in gaps by vessel class and join with all vessel summary
 --
 gaps_by_class as (
-    select 
+    select
     sum(if(is_real_gap, gap_hours, 0)) real_gap_hours,
     round(sum(if(is_real_gap, gap_hours, 0)) / 24) real_gap_days,
     sum(gap_hours) gap_hours,
@@ -201,7 +201,7 @@ gaps_by_class as (
     sum(if(is_real_gap and not over_four_weeks, gap_hours, 0)) real_gap_hours_4w,
     sum(if(not over_four_weeks, gap_hours,0)) gap_hours_4w,
     vessel_class as vessel_group
-    from gaps 
+    from gaps
     group by vessel_class
     union all
     select * from total_gaps
@@ -210,7 +210,7 @@ gaps_by_class as (
 -- Summarize the time spent in gaps by vessel class and join with all vessel summary
 --
 gaps_by_flag as (
-    select 
+    select
     sum(if(is_real_gap, gap_hours, 0)) real_gap_hours,
     round(sum(if(is_real_gap, gap_hours, 0)) / 24) real_gap_days,
     sum(gap_hours) gap_hours,
@@ -227,26 +227,26 @@ gaps_by_flag as (
 -- Calculate fraction of time in gaps by class
 --
 summary_by_class AS (
-    select 
+    select
     *,
     -- hours here is time when the time betwee positions is less than 12 hours
     round(real_gap_hours/(gap_hours + hours),3) frac_gaps,
     round(real_gap_hours_2w/(gap_hours_2w + hours),3) frac_gaps_2w,
     round(real_gap_hours_4w/(gap_hours_4w + hours),3) frac_gaps_4w,
     -- average gap days
-    round(real_gap_hours_2w / gaps_summarized_by_class.disabling_events_2w / 24, 2) as avg_gap_days_2w, 
+    round(real_gap_hours_2w / gaps_summarized_by_class.disabling_events_2w / 24, 2) as avg_gap_days_2w,
     round(real_gap_hours / gaps_summarized_by_class.disabling_events / 24, 2) as avg_gap_days
-    from gaps_by_class 
+    from gaps_by_class
     join total_fishing_activity_by_class
     using(vessel_group)
-    join gaps_summarized_by_class  
+    join gaps_summarized_by_class
     using(vessel_group)
 ),
 --
 -- Calculate fraction of time in gaps by flag
 --
 summary_by_flag AS (
-    select 
+    select
     *,
     -- hours here is time when the time betwee positions is less than 12 hours
     round(real_gap_hours/(gap_hours + hours),3) frac_gaps,
@@ -255,15 +255,15 @@ summary_by_flag AS (
     -- average gap days, where gap hours are the subset of the disabling time spent >50nm
     round(real_gap_hours_2w / gaps_summarized_by_flag.disabling_events_2w / 24, 2) as avg_gap_days_2w,
     round(real_gap_hours / gaps_summarized_by_flag.disabling_events / 24, 2) as avg_gap_days
-    from gaps_by_flag 
+    from gaps_by_flag
     join fishing_activity_by_flag
     using(vessel_group)
-    join gaps_summarized_by_flag  
+    join gaps_summarized_by_flag
     using(vessel_group)
 )
 
-SELECT * FROM summary_by_class 
-UNION ALL 
+SELECT * FROM summary_by_class
+UNION ALL
 SELECT * FROM summary_by_flag
 '''
 
@@ -274,13 +274,13 @@ print(q)
 
 print("Fraction of time lost by class - 2 week versus all time, using interpolation method")
 for index,row in dfi.iterrows():
-    print(f"{100*row.frac_gaps_2w:.1f}-{100*row.frac_gaps:.1f}% - {row.vessel_group}")
+    print(f"{100*row.frac_gaps_2w:.1f}-{100*row.frac_gaps:.1f}% - {row.vessel_class}")
 
-dfi[['vessel_group', 
-    'disabling_events', 
-    'real_gap_days_2w', 
-    'real_gap_days', 
-    'frac_gaps_2w', 
+dfi[['vessel_class',
+    'disabling_events',
+    'real_gap_days_2w',
+    'real_gap_days',
+    'frac_gaps_2w',
     'frac_gaps',
     'avg_gap_days_2w',
     'avg_gap_days']]
@@ -308,13 +308,13 @@ dfr = gbq(q)
 
 print("Fraction of time lost by class - 2 week versus all time, using raster method")
 for index,row in dfr.iterrows():
-    print(f"{100*row.frac_gaps_2w:.1f}-{100*row.frac_gaps:.1f}% - {row.vessel_group}")
+    print(f"{100*row.frac_gaps_2w:.1f}-{100*row.frac_gaps:.1f}% - {row.vessel_class}")
 
-dfr[['vessel_group', 
+dfr[['vessel_group',
     'disabling_events',
-#     'real_gap_days_2w', 
-    'real_gap_days', 
-#     'frac_gaps_2w', 
+#     'real_gap_days_2w',
+    'real_gap_days',
+#     'frac_gaps_2w',
     'frac_gaps',
 #     'avg_gap_days_2w',
     'avg_gap_days']]
@@ -355,7 +355,7 @@ print(other_2wf, other_4wf, other)
 #
 # Coordinates ordered as (lon_min, lon_max, lat_min, lat_max)
 #
-# **Argentine EEZ**: bbox_ARG = (-65, -55, -50, -35) 
+# **Argentine EEZ**: bbox_ARG = (-65, -55, -50, -35)
 #
 # **NW pacific**: bbox_NWP = (143, 175, 38, 52)
 #
@@ -368,9 +368,9 @@ WITH
 --
 good_enough_reception as (
     SELECT
-    lat_bin, 
+    lat_bin,
     lon_bin
-    FROM `world-fishing-827.proj_ais_gaps_catena.sat_reception_smoothed_one_degree_v20210722` 
+    FROM `world-fishing-827.proj_ais_gaps_catena.sat_reception_smoothed_one_degree_v20210722`
     WHERE class = "A"
     GROUP BY lat_bin, lon_bin
     HAVING AVG(positions_per_day) > 5
@@ -380,7 +380,7 @@ good_enough_reception as (
 -- to purse_seines in the fishing_activity table
 --
 fishing_activity AS(
-    SELECT 
+    SELECT
     lat_bin,
     lon_bin,
     hours_in_gaps_under_12
@@ -394,9 +394,9 @@ fishing_activity AS(
 -- Label cells in the bounding box AOIS
 --
 fishing_activity_aoi AS (
-    SELECT 
+    SELECT
     *,
-    CASE 
+    CASE
         -- Argentina
         WHEN (
             lat_bin BETWEEN -50 AND -35
@@ -420,7 +420,7 @@ fishing_activity_aoi AS (
 -- Summarize activity for all fishing vessels on the high seas
 --
 total_fishing AS (
-    SELECT 
+    SELECT
     region,
     ROUND(SUM(hours_in_gaps_under_12)) hours
     FROM fishing_activity_aoi
@@ -430,8 +430,8 @@ total_fishing AS (
 -- Get all gaps in good enough reception and >50 nm from shore
 --
 gaps AS (
-    SELECT 
-    * 
+    SELECT
+    *
     FROM {gridded_gaps_table}
     JOIN good_enough_reception
     ON floor(lat_index) = lat_bin
@@ -442,9 +442,9 @@ gaps AS (
 -- Assign gaps to AOIs
 --
 gaps_aoi AS (
-    SELECT 
+    SELECT
     *,
-    CASE 
+    CASE
     -- Argentina
     WHEN (
         lat_bin BETWEEN -50 AND -35
@@ -468,20 +468,20 @@ gaps_aoi AS (
 -- Summarize the time spent in gaps for all vessels
 --
 total_gaps AS (
-    select 
+    select
     region,
     sum(gap_hours) gap_hours,
     sum(if(is_real_gap, gap_hours, 0)) real_gap_hours,
     sum(if(not over_two_weeks, gap_hours,0)) gap_hours_2w,
     sum(if(is_real_gap and not over_two_weeks, gap_hours, 0)) real_gap_hours_2w
-    from gaps_aoi 
+    from gaps_aoi
     GROUP BY 1
 ),
 --
 -- Calculate total time and fraction of time lost to gaps by region
 --
 frac_by_aoi AS (
-    SELECT 
+    SELECT
     region,
     -- Calculate fraction of time lost to gaps in each region
     -- and the fraction of all time lost to gaps
@@ -490,16 +490,16 @@ frac_by_aoi AS (
     round(real_gap_hours/(gap_hours + hours),3) frac_gaps,
     round(real_gap_hours/total_real_gap_hours,3) frac_all_gaps,
     FROM (
-        SELECT 
+        SELECT
         *,
         -- Summarize gap hours and real gap hours across all regions
         SUM(hours) OVER () as total_hours,
         SUM(gap_hours_2w) OVER () as total_gap_hours_2w,
-        SUM(real_gap_hours_2w) OVER () as total_real_gap_hours_2w,    
+        SUM(real_gap_hours_2w) OVER () as total_real_gap_hours_2w,
         SUM(gap_hours) OVER () as total_gap_hours,
         SUM(real_gap_hours) OVER () as total_real_gap_hours
         FROM total_gaps
-        JOIN total_fishing 
+        JOIN total_fishing
         USING(region)
     )
 )
@@ -512,12 +512,12 @@ SELECT * FROM frac_by_aoi
 # Calculate the fraction of fishing vessels active in the study region had suspected disabling events.
 
 ssvid_query_template = '''
-WITH 
+WITH
 --
 -- Get all gaps that start in the study area
 --
 all_disabling_ssvid AS (
-    SELECT 
+    SELECT
     -- COUNT(DISTINCT gap_id) as events,
     COUNT(DISTINCT ssvid) as ssvid_with_gaps
     FROM `world-fishing-827.proj_ais_gaps_catena.ais_gap_events_features_v20210722`
@@ -526,7 +526,7 @@ all_disabling_ssvid AS (
     AND positions_X_hours_before_sat >= 19
     AND off_distance_from_shore_m > 1852 * 50
     AND on_distance_from_shore_m > 1852 * 50
-    AND DATE(gap_start) >= '2017-01-01' 
+    AND DATE(gap_start) >= '2017-01-01'
     AND DATE(gap_end) <= '2019-12-31'
 ),
 --
@@ -534,9 +534,9 @@ all_disabling_ssvid AS (
 --
 good_enough_reception as (
     SELECT
-    lat_bin, 
+    lat_bin,
     lon_bin
-    FROM `world-fishing-827.proj_ais_gaps_catena.sat_reception_smoothed_one_degree_v20210722` 
+    FROM `world-fishing-827.proj_ais_gaps_catena.sat_reception_smoothed_one_degree_v20210722`
     WHERE class = "A"
     GROUP BY lat_bin, lon_bin
     HAVING AVG(positions_per_day) > 5
@@ -556,7 +556,7 @@ all_fishing_ssvid AS (
     AND distance_from_shore_m > 1852 * 50
     -- Noise filter to only include vessels with good segments
     AND seg_id IN (
-        SELECT seg_id 
+        SELECT seg_id
         FROM `world-fishing-827.gfw_research.pipe_v20201001_segs`
         WHERE good_seg
         AND positions > 10)
@@ -567,19 +567,19 @@ all_fishing_ssvid AS (
 all_fishing_ssvid_filtered AS (
     SELECT DISTINCT
     ssvid
-    FROM all_fishing_ssvid 
+    FROM all_fishing_ssvid
     JOIN `world-fishing-827.gfw_research.fishing_vessels_ssvid_v20210301`
     USING(ssvid, year)
 )
 --
 -- Join counts of MMSI and calculate fraction
 --
-SELECT 
+SELECT
 *,
-round(ssvid_with_gaps / all_fishing_ssvid, 3) frac_ssvid_with_disabling  
-FROM all_disabling_ssvid 
+round(ssvid_with_gaps / all_fishing_ssvid, 3) frac_ssvid_with_disabling
+FROM all_disabling_ssvid
 CROSS JOIN (
-    SELECT 
+    SELECT
     COUNT(*) as all_fishing_ssvid
     FROM all_fishing_ssvid_filtered
 ) '''

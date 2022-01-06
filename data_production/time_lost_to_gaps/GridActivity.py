@@ -7,7 +7,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.6.0
+#       jupytext_version: 1.13.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -30,7 +30,7 @@ def gbq(q):
 # -
 
 # Version to run
-output_version = '20211103'
+output_version = '20211203'
 
 # The following is just to print SQL to copy into
 # the query RasterGaps.sql.j2
@@ -184,7 +184,7 @@ subprocess.run("bq query".split(), input=bytes(query, "utf-8"))
 dl_query = """
 select * 
 from proj_ais_gaps_catena.gaps_allocated_interpolate_v{} 
-where over_200_nm 
+where over_200nm 
 and is_real_gap 
 and not over_two_weeks
 """.format(output_version)
