@@ -824,7 +824,7 @@ with plt.rc_context({
             }):
     fig = plt.figure(figsize=(6,4))
     df_grouped[df_grouped.index<7]['frac'].plot(kind='bar')
-    plt.ylabel("Fraction of spatially allocated time in gaps", fontsize=11)
+    plt.ylabel("Fraction of time", fontsize=11)
     plt.xlabel("Duration of disabling event (weeks)", fontsize=11)
     plt.xticks(rotation=0, fontsize=10)
     plt.yticks(fontsize=10)
