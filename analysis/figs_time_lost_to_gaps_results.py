@@ -330,16 +330,6 @@ GROUP BY lat_bin, lon_bin
 
 df_reception = gbq(q)
 
-# %%
-# q = f'''
-# select * from {table_reception}
-# where year = 2019
-# and month = 1 
-# and class = "A"
-# '''
-
-# df_reception = gbq(q)
-
 # %% [markdown]
 # ---
 
@@ -438,16 +428,6 @@ reception = psm.rasters.df2raster(df_reception,
 reception[reception<=5] = 0
 reception[reception>5] = 1
 
-# %%
-# reception = psm.rasters.df2raster(df_reception,
-#                                'lon_bin', 'lat_bin',
-#                                'positions_per_day', xyscale=scale, 
-#                                 per_km2=False, origin = 'lower')
-
-# # make a raster that is 0 or 1 to muliply the result rasters
-# reception[reception<=5] = 0
-# reception[reception>5] = 1
-
 # %% [markdown]
 # # Figures
 
@@ -540,7 +520,7 @@ for i, (number, vessel_class, vessel_class_label) in enumerate(vessel_classes):
     
 # BY FLAG
 flags = [('B', 'ESP', 'Spain'),
-         ('D', 'TWN', 'Taiwan'),
+         ('D', 'TWN', 'Chinese Taipei'),
          ('F', 'CHN', 'China'),
          ('H', 'KOR', 'South Korea'),
         ]
