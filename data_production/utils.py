@@ -189,20 +189,23 @@ def make_ais_gap_events_features_table(pipeline_version,
 
 # Loitering events function
 def make_loitering_events_table(vd_version,
-                                pipeline_version,
+                                start_date,
+                                end_date,
                                 destination_dataset, 
                                 destination_table):
         
     # Format jinja2 command
     cmd = """jinja2 loitering/loitering_events.sql.j2 \
     -D vd_version="{vd_version}" \
-    -D pipeline_version="{pipeline_version}" \
+    -D start_date="{start_date}" \
+    -D end_date="{end_date}" \
     | \
     bq query --replace \
     --destination_table={destination_dataset}.{destination_table}\
     --allow_large_results --use_legacy_sql=false --max_rows=0
     """.format(vd_version=vd_version,
-               pipeline_version=pipeline_version,
+               start_date=start_date,
+               end_date=end_date,
                destination_dataset=destination_dataset,
                destination_table=destination_table)
     return cmd
@@ -210,19 +213,25 @@ def make_loitering_events_table(vd_version,
 # Gridded loitering function
 def make_gridded_loitering_table(destination_dataset,
                                  output_version,
-                                 destination_table):
+                                 destination_table,
+                                 start_date,
+                                 end_date):
         
     # Format jinja2 command
     cmd = """jinja2 loitering/loitering_events_gridded.sql.j2 \
     -D destination_dataset="{destination_dataset}" \
     -D output_version="{output_version}" \
+    -D start_date="{start_date}" \
+    -D end_date="{end_date}" \
     | \
     bq query --replace \
     --destination_table={destination_dataset}.{destination_table}\
     --allow_large_results --use_legacy_sql=false --max_rows=0
     """.format(output_version=output_version,
                destination_dataset=destination_dataset,
-               destination_table=destination_table)
+               destination_table=destination_table,
+               start_date=start_date,
+               end_date=end_date)
     return cmd
 
 ####################################

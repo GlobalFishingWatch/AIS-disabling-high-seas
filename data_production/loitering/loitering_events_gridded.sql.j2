@@ -2,7 +2,7 @@
   WITH
 
   #
-  # Get all loitering events for carrier vessels between 2017-2019
+  # Get all loitering events for carrier vessels between {{ start_date }} and {{ end_date }}
   # Minimum loitering time >= 4 hours, avg speed <= 2 knots, and
   # average distance from shore >= 20 nm
   #
@@ -21,7 +21,8 @@
     loitering_hours
   FROM
     loitering_events
-  WHERE DATE(loitering_start_timestamp) < '2020-01-01'
+  WHERE DATE(loitering_start_timestamp) >= '{{ start_date }}' 
+  AND DATE(loitering_start_timestamp) <= '{{ end_date }}' 
   )
 
   #

@@ -68,15 +68,15 @@ pipeline_version = 'v20201001'
 pipeline_table = 'pipe_{}'.format(pipeline_version)
 segs_table = 'pipe_{}_segs'.format(pipeline_version)
 vi_version = 'v20210301'
-vd_version = 'v20210601'
+vd_version = 'v20220101'
 
 # Output tables version
-output_version = 'v20210722'
+output_version = 'v20220301'
 create_tables = True
 
 # Date range
 start_date = date(2017,1, 1)
-end_date = date(2019,12, 31)
+end_date = date(2020,12, 31)
 
 # Min gap hours
 min_gap_hours = 6
@@ -237,9 +237,17 @@ gridded_loitering_table = 'gridded_loitering_{}'.format(output_version)
 # After extracting events, produce a gridded dataset of all loitering events at quarter degree resolution.
 
 loitering_cmd = utils.make_loitering_events_table(vd_version = vd_version,
-                                                  pipeline_version = pipeline_version,
+                                                  start_date = tp[0],
+                                                  end_date = tp[-1],
                                                   destination_dataset = destination_dataset,
                                                   destination_table = loitering_events_table)
+
+# +
+# test query
+# print(loitering_cmd)
+# test_cmd = loitering_cmd.split('|')[0]
+# os.system(test_cmd)
+# -
 
 # Run query
 if create_tables:
@@ -247,7 +255,9 @@ if create_tables:
 
 gridded_loitering_cmd = utils.make_gridded_loitering_table(destination_dataset = proj_dataset,
                                                            output_version = output_version,
-                                                           destination_table = gridded_loitering_table)
+                                                           destination_table = gridded_loitering_table,
+                                                           start_date = start_date,
+                                                           end_date = end_date)
 gridded_loitering_cmd
 
 if create_tables:
@@ -682,7 +692,8 @@ results_dir = "../results"
 # os.mkdir(results_dir)
 # Create folder for specific results version
 results_version_dir = os.path.join(results_dir, "gap_inputs_{}".format(output_version))
-# os.mkdir(results_version_dir)
+print(results_version_dir)
+os.mkdir(results_version_dir)
 
 # %%bigquery gap_events_features_df
 SELECT * 
@@ -696,17 +707,19 @@ gap_events_features_df.to_csv('gap_events_features_{}.csv'.format(output_version
 
 # %%bigquery loitering_events_df
 SELECT *
-FROM proj_ais_gaps_catena.loitering_events_v20210722
+FROM proj_ais_gaps_catena.loitering_events_v20220301
 
-loitering_events_df.to_csv('{d}/loitering_events_v20210722.csv'.format(d = results_version_dir), index = False)
+loitering_events_df.to_csv('{d}/loitering_events_{v}.csv'.format(d = results_version_dir,
+                                                                 v = output_version), index = False)
 
 # Gridded loitering
 
 # %%bigquery gridded_loitering_df
 SELECT *
-FROM proj_ais_gaps_catena.gridded_loitering_v20210722
+FROM proj_ais_gaps_catena.gridded_loitering_v20220301
 
-gridded_loitering_df.to_csv('{d}/loitering_quarter_degree_v20210722_2017_to_2019.csv'.format(d = results_version_dir), index = False)
+gridded_loitering_df.to_csv('{d}/loitering_quarter_degree_{v}_2017_to_2020.csv'.format(d = results_version_dir,
+                                                                                       v = output_version), index = False)
 
 # Download gridded fishing:
 
