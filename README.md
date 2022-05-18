@@ -31,7 +31,7 @@ Automatic Identification System (AIS) data are a powerful tool for tracking and 
 
 ## Data
 
-The input data (when possible) and results of this analysis are available in the `data/` subdirectory: 
+The input data (when possible) and results of this analysis are available in the `data/` subdirectory:
 
 ```
 - data/
@@ -59,7 +59,15 @@ The code for this analysis is divided into multiple subdirectories to isolate da
 
 [model_selection/](model_selection/README.md): Code pertaining to the development of a labeled training dataset of AIS disabling events and the model selection process for choosing an AIS disabling model.
 
-### Relevant papers
+### Analysis pipeline:
+
+1. Generate AIS gap events and reception quality datasets
+2. Create labeled training dataset of AIS disabling events
+3. AIS disabling model selection
+4. Boosted regression tree modelling.
+5. Additional analyses.
+
+## Relevant papers
 
 1. Boerder, Kristina, Nathan A. Miller, and Boris Worm. "Global hot spots of transshipment of fish catch at sea." Science advances 4.7 (2018): eaat7159.  
 2. Cimino, Megan A., et al. "Towards a fishing pressure prediction system for a western Pacific EEZ." Scientific reports 9.1 (2019): 1-10.  
