@@ -1,211 +1,202 @@
-[{
-		"mode": "NULLABLE",
-		"name": "ssvid",
-		"type": "STRING",
-		"description": "ssvid"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_id",
-		"type": "STRING",
-		"description": "gap id (has of ssvid, gap_start, gap_start_lat, and gap_start_lon)"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_start",
-		"type": "TIMESTAMP",
-		"description": "the timestamp of the position at the beginning of the gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_end",
-		"type": "TIMESTAMP",
-		"description": "the timestamp of the position at the end of the gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_hours",
-		"type": "FLOAT",
-		"description": "length of the gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_distance_m",
-		"type": "FLOAT",
-		"description": "distance between start and end positions"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_implied_speed_knots",
-		"type": "FLOAT",
-		"description": "implied speed during the gap based on gap_hours and gap_distance_m"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_start_seg_id",
-		"type": "STRING",
-		"description": "seg_id for last position before start of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_start_msgid",
-		"type": "STRING",
-		"description": "message ID for last position message before for start of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_start_lat",
-		"type": "FLOAT",
-		"description": "latitude at start of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_start_lon",
-		"type": "FLOAT",
-		"description": "longitude at start of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_start_course",
-		"type": "FLOAT",
-		"description": "course at start of gap (from AIS)"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_start_speed_knots",
-		"type": "FLOAT",
-		"description": "speed (knots) at start of gap (from AIS)"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_start_class",
-		"type": "STRING",
-		"description": "AIS device class at start of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_start_receiver_type",
-		"type": "STRING",
-		"description": "receiver type at start of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_start_distance_from_shore_m",
-		"type": "FLOAT",
-		"description": "distance from shore (meters) at start of gap (using rasterized distance)"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_start_distance_from_port_m",
-		"type": "FLOAT",
-		"description": "distance from nearest port (meters) at start of gap (using rasterized distance)"
-	},
-	{
-		"mode": "REPEATED",
-		"name": "gap_start_eez",
-		"type": "STRING",
-		"description": "nearest EEZ at start of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_start_rfmo",
-		"type": "STRING",
-		"description": "nearest RFMO at start of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_end_seg_id",
-		"type": "STRING",
-		"description": "seg_id for first position after end of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_end_msgid",
-		"type": "STRING",
-		"description": "position message for end of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_end_lat",
-		"type": "FLOAT",
-		"description": "latitude at end of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_end_lon",
-		"type": "FLOAT",
-		"description": "longitude at end of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_end_course",
-		"type": "FLOAT",
-		"description": "course at end of gap (from AIS)"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_end_speed_knots",
-		"type": "FLOAT",
-		"description": "speed (knots) at end of gap (from AIS)"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_end_class",
-		"type": "STRING",
-		"description": "AIS device class at end of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_end_receiver_type",
-		"type": "STRING",
-		"description": "receiver type at end of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_end_distance_from_shore_m",
-		"type": "FLOAT",
-		"description": "distance from shore (meters) at end of gap (using rasterized distance)"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_end_distance_from_port_m",
-		"type": "FLOAT",
-		"description": "distance from nearest port (meters) at end of gap (using rasterized distance)"
-	},
-	{
-		"mode": "REPEATED",
-		"name": "gap_end_eez",
-		"type": "STRING",
-		"description": "nearest EEZ at end of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "gap_end_rfmo",
-		"type": "STRING",
-		"description": "nearest RFMO at end of gap"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "positions_12_hours_before",
-		"type": "INTEGER",
-		"description": "number of positions in the 12 hours before the gap start"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "positions_12_hours_before_sat",
-		"type": "INTEGER",
-		"description": "number of satellite positions in the 12 hours before the gap start"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "positions_12_hours_before_ter",
-		"type": "INTEGER",
-		"description": "number of terrestrial positions in the 12 hours before the gap start"
-	},
-	{
-		"mode": "NULLABLE",
-		"name": "is_closed",
-		"type": "BOOLEAN",
-		"description": "1 if the gap is closed, 0 if the gap is open"
-	}
+[
+      {
+        "mode": "NULLABLE",
+        "name": "ssvid",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_id",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_start",
+        "type": "TIMESTAMP"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_end",
+        "type": "TIMESTAMP"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_hours",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_distance_m",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_implied_speed_knots",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_start_seg_id",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_start_msgid",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_start_lat",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_start_lon",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_start_course",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_start_speed_knots",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_start_class",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_start_receiver_type",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_start_distance_from_shore_m",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_start_distance_from_port_m",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "REPEATED",
+        "name": "gap_start_eez",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_start_rfmo",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_end_seg_id",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_end_msgid",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_end_lat",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_end_lon",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_end_course",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_end_speed_knots",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_end_class",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_end_receiver_type",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_end_distance_from_shore_m",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_end_distance_from_port_m",
+        "type": "FLOAT"
+      },
+      {
+        "mode": "REPEATED",
+        "name": "gap_end_eez",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "gap_end_rfmo",
+        "type": "STRING"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "positions_6_hours_before",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "positions_12_hours_before",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "positions_18_hours_before",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "positions_24_hours_before",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "positions_6_hours_before_sat",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "positions_12_hours_before_sat",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "positions_18_hours_before_sat",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "positions_24_hours_before_sat",
+        "type": "INTEGER"
+      },
+      {
+        "mode": "NULLABLE",
+        "name": "is_closed",
+        "type": "BOOLEAN"
+      }
 ]

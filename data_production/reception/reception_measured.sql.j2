@@ -46,15 +46,12 @@ sat_ssvid as (
            _partitiontime date ,
            A_messages,
            B_messages
-{#     from `{{ destination_dataset }}.ais_positions_byssvid_hourly_{{ output_version }}` #}
     # Use table grouped by segid
     from `{{ destination_dataset }}.ais_positions_byseg_hourly_{{ output_version }}`
     where not interpolated_at_segment_startorend -- don't extrapolate out at the end of segments
       and date(_partitiontime) >= startdate()
       and date(_partitiontime) < enddate()
       and ssvid in (select ssvid from good_ssvid)
-      # Use good segments -- Check with David since we did this originally
-      # but he recently made a comment about not doing it
       and seg_id IN (
           SELECT
           seg_id
