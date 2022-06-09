@@ -1,18 +1,21 @@
 /*
 Generate aggregate vessel presence, fishing activity, and
 number of fishing MMSI present per 0.25 degree grid cell
-over full time period of analysis.
+over by month during the time period of analysis.
 */
-
+--
+CREATE TEMP FUNCTION startdate() AS (DATE('{{ start_date }}'));
+CREATE TEMP FUNCTION enddate() AS (DATE('{{ end_date }}'));
+--
 WITH
-
+--
   ########################################
   # This subquery gets fishing vessels
   fishing_vessels AS(
   SELECT *
   FROM gfw_research.fishing_vessels_ssvid_{{ vi_version }}
   ),
-
+--
   ############################################
   # This subquery gets corrected squid jiggers
   corrected_jiggers AS (
@@ -24,10 +27,10 @@ WITH
      'squid_jigger', best.best_vessel_class) as vessel_class,
   FROM `gfw_research.vi_ssvid_byyear_{{ vi_version }}`
   WHERE best.registry_net_disagreement = 'squid_jigger,pole_and_line'
-  AND year BETWEEN 2017 AND 2019
+  AND year BETWEEN EXTRACT(year FROM startdate()) AND EXTRACT(year FROM enddate())
   ),
-
-############################################
+--
+ ############################################
  # Override best_vessel_class for corrected squid jiggers
  corrected_fishing_vessels AS (
   SELECT
@@ -39,65 +42,70 @@ WITH
   LEFT JOIN corrected_jiggers
   USING(ssvid, year)
  ),
-
+--
   ########################################
   # This subquery identifies good segments
   good_segments AS (
   SELECT
     seg_id
   FROM
-    gfw_research.pipe_{{ pipeline_version }}_segs
+    {{ segs_table }}
   WHERE good_seg
   AND NOT overlapping_and_short
     ),
-
+--
+  ########################################
+  # This subquery identifies transits
+  transits AS (
+    SELECT *
+    FROM gfw_research_precursors.transits_v20220510
+    WHERE DATE(timestamp) BETWEEN startdate() AND enddate()
+  ),
+--
   #####################################################################
   # This subquery fishing query gets all fishing within a date range
   positions AS (
   SELECT
-    ssvid,
+    a.ssvid,
     (CASE
         WHEN type IN ('AIS.1', 'AIS.2', 'AIS.3') THEN 'A'
         WHEN type IN ('AIS.18','AIS.19') THEN 'B'
         ELSE NULL
      END
    ) as class,
-    /*
-    Assign lat/lon bins at desired resolution (here 10th degree)
-    FLOOR takes the smallest integer after converting to units of
-    0.1 degree - e.g. 37.42 becomes 374 10th degree units
-    */
+    # Assign lat/lon bins at desired resolution (here quarter degree)
     EXTRACT(date FROM _partitiontime) as date,
     EXTRACT(year FROM _partitiontime) as year,
+    DATE(DATE_TRUNC(_partitiontime, MONTH)) as month,
     FLOOR(lat * 4 ) as lat_bin,
     FLOOR(lon * 4 ) as lon_bin,
     hours,
     nnet_score,
     night_loitering,
     b.ssvid IS NOT NULL as is_transit
-  /*
-  Query the pipe_vYYYYMMDD_fishing table to reduce query
-  size since we are only interested in fishing vessels
-  */
-  FROM
-    `gfw_research.pipe_{{ pipeline_version }}_fishing`
-  LEFT JOIN gfw_research_precursors.transits_v20210303 b
-  USING(ssvid, msgid, seg_id, _partitiontime)
-  # Restrict query to single date
-  WHERE _partitiontime BETWEEN "2017-01-01" AND "2019-12-31"
+  FROM pipe_production_v20201001.research_messages a
+  LEFT JOIN transits b
+  ON(
+    a.ssvid = b.ssvid
+    AND a.msgid = b.msgid
+    AND a.seg_id = b.seg_id
+    AND DATE(a._partitiontime) = DATE(b.timestamp))
+  # Restrict query to date range
+  WHERE DATE(_partitiontime) BETWEEN startdate() AND enddate()
+  AND is_fishing_vessel
   # Remove noisy points
   AND lat >= -90
   AND lat <= 90
   AND lon >= -180
   AND lon <= 180
   # Use good_segments subquery to only include positions from good segments
-  AND seg_id IN (
+  AND a.seg_id IN (
     SELECT
       seg_id
     FROM
       good_segments)
   ),
-
+--
   #####################################################################
   # This filters fishing positions to the list of fishing vessels
   # and adds in vessel class and flag.
@@ -110,7 +118,7 @@ WITH
   JOIN fishing_vessels
   USING (ssvid, year)
   ),
-
+--
   ########################################################################
   # Create fishing_hours attribute.
   fishing AS (
@@ -119,15 +127,16 @@ WITH
   IF(fishing_score > 0.5 AND NOT is_transit, hours, 0) as fishing_hours
   FROM fishing_filtered
   ),
-
-  # Summarize by day
+--
+  # Summarize by day to count distinct vessel fishing days
+  # per cell (defined as fishing for at least an hour in the cell)
   fishing_days AS (
   SELECT
     ssvid,
     best_vessel_class as vessel_class,
     best_flag as flag,
     date,
-    year,
+    month,
     lat_bin,
     lon_bin,
     class,
@@ -136,12 +145,13 @@ WITH
     IF(SUM(hours) > 0, 1, 0) as vessel_day,
     IF(SUM(fishing_hours) > 1, 1, 0) as fishing_day
   FROM fishing
-  GROUP BY ssvid, vessel_class, flag, date, year, lat_bin, lon_bin, class
+  GROUP BY ssvid, vessel_class, flag, date, month, lat_bin, lon_bin, class
   ),
-
-  # Aggregate all data by 0.25 degree bin
+--
+  # Aggregate monthly data by 0.25 degree bin
   all_fishing_binned AS (
   SELECT
+    month,
     CAST(lat_bin / 4 + 0.125 as NUMERIC) lat_bin,
     CAST(lon_bin / 4 + 0.125 as NUMERIC) lon_bin,
     vessel_class,
@@ -153,9 +163,10 @@ WITH
     SUM(vessel_day) as vessel_days,
     SUM(fishing_day) as fishing_days
   FROM fishing_days
-  GROUP BY lat_bin, lon_bin, vessel_class, flag, class
+  GROUP BY month, lat_bin, lon_bin, vessel_class, flag, class
   )
-
+--
 # Return binned data
-select * from all_fishing_binned
-order by lat_bin, lon_bin, vessel_class, flag, class
+SELECT *
+FROM all_fishing_binned
+ORDER BY month, lat_bin, lon_bin, vessel_class, flag, class

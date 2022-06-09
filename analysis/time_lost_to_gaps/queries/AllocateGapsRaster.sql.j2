@@ -1,0 +1,263 @@
+
+#standardSQL
+
+create temp function radians(x float64) as (
+  3.14159265359 * x / 180
+);
+
+create temp function degrees(x float64) as (
+    x * 180 / 3.14159265359
+);
+
+create temp function deglat2km() as (
+  111.195
+);
+
+create temp function get_midpoint(point1 geography, point2 geography) as (
+  -- Equation from http://www.movable-type.co.uk/scripts/latlong.html
+  -- They assume a spherical earth, which, of course, is only mostly right
+
+  -- MIDPOINT
+  -- Formula:	Bx = cos φ2 ⋅ cos Δλ
+  -- By = cos φ2 ⋅ sin Δλ
+  -- φm = atan2( sin φ1 + sin φ2, √(cos φ1 + Bx)² + By² )
+  -- λm = λ1 + atan2(By, cos(φ1)+Bx)
+  -- in both cases,  λ1 is lon1,  λ2 is lon2, φ1 is lat1, φ2 is lat2, measured in radians
+  ( select
+      st_geogpoint(lon_center, lat_center)
+    from
+      (
+      select degrees(atan2(sin(rlat1) + sin(rlat2),
+                           pow((cos(rlat1)+b_x)*(cos(rlat1)+B_x) + B_y*B_y, .5 ))) lat_center,
+             degrees(rlon1 + atan2(b_y, cos(rlat1) + b_x)) as lon_center
+          from
+      (
+        select
+        cos((rlat2))*cos((rlon2)-(rlon1)) as b_x,
+        cos((rlat2)) * sin((rlon2)-(rlon1)) as b_y,
+        *
+        from
+          (select
+          radians(st_x(point1)) as rlon1,
+          radians(st_y(point1)) as rlat1,
+          radians(st_x(point2)) as rlon2,
+          radians(st_y(point2)) as rlat2)
+
+  limit 1
+  )
+)));
+
+create temp function get_course(point1 geography, point2 geography) as ((
+  -- Equation are from http://www.movable-type.co.uk/scripts/latlong.html
+  -- assumes a spherical earth, which, of course, is only mostly right
+
+  --  BEARING
+  -- (which is measured, apparently, counterclockwise from due east, so
+  -- we edited to make it clockwise from due north
+  --        const y = Math.sin(λ2-λ1) * Math.cos(φ2);
+  -- const x = Math.cos(φ1)*Math.sin(φ2) -
+  --           Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
+  -- const θ = Math.atan2(y, x);
+  -- const brng = (θ*180/Math.PI + 360) % 360; // in degrees
+  -- λ1 is lon1,  λ2 is lon2, φ1 is lat1, φ2 is lat2, measured in radians
+
+  select (90-degrees(atan2(x, y))) course
+  from
+  (select
+  sin(rlon2-rlon1)*cos(rlat2) as y,
+  cos(rlat1)*sin(rlat2) - sin(rlat1)*cos(rlat2)*cos(rlon2-rlon1) as x,
+  from
+    (select
+    radians(st_x(point1)) as rlon1,
+    radians(st_y(point1)) as rlat1,
+    radians(st_x(point2)) as rlon2,
+    radians(st_y(point2)) as rlat2))
+
+));
+
+create temp function get_course_frommidpoint(point1 geography, point2 geography) as (
+  get_course(get_midpoint(point1, point2), point2)
+);
+
+create temp function weight_average_lons(lon float64, lon2 float64, timeto float64, timeto2 float64) AS
+(
+  # Make sure that lon < 180 and > -180, and that we average across the dateline
+  # appropriately
+case
+when lon - lon2 > 300 then ( (lon-360)*timeto2 + lon2*timeto)/(timeto+timeto2)
+when lon - lon2 < -300 then ( (lon+360)*timeto2 + lon2*timeto)/(timeto+timeto2)
+else (lon*timeto2 + lon2*timeto)/(timeto+timeto2) end );
+
+create temp function reasonable_lon(lon float64) AS
+(case when lon > 180 then lon - 360
+when lon < -180 then lon + 360
+else lon end);
+
+
+create temp function map_label(label string)
+as (
+  case when label ="drifting_longlines" then "drifting_longlines"
+  when label ="tuna_purse_seines" then "tuna_purse_seines"
+  when label ="squid_jigger" then "squid_jigger"
+  when label = "trawlers" then "trawlers"
+  else "other" end
+);
+
+create temp function map_distance(d float64)
+as (
+case when d < 10/2+3/2 then 3
+when d >= 10/2+3/2 and d < 15 then 10
+when d >= 15 and d <30 then 20
+when d >= 30 and d < 60 then 40
+when d >= 60 and d < 120 then 80
+when d >= 120 and d <240 then 160
+when d >= 240 and d < 480 then 320
+when d >= 480 and d < 960 then 640
+when d >= 960 then 1280
+else null end
+);
+
+create temp function map_hours_diff(h float64) as (
+case when h < 12 + 18.0 then 12
+when h >= 12 + 18.0 and h < 36.0 then 24
+when h >= 36 and h < 72 then 48
+ when h >= 72 and h < 120 then 96
+ when h >= 120 and h < 168 then 144
+ when h >= 168 and h < 216 then 192
+ when h >= 216 and h < 264 then 240
+ when h >= 264 and h < 312 then 288
+ when h >= 312 and h < 360 then 336
+ when h >= 360 and h < 408 then 384
+ when h >= 408 and h < 456 then 432
+ when h >= 456 and h < 540 then 480
+ when h >= 540 and h < 660 then 600
+ when h >= 660 and h < 780 then 720
+ when h >= 780 then 840
+
+else null end
+);
+
+
+create table
+   {{ output_table }}
+cluster by
+vessel_class,
+is_real_gap,
+over_200_nm,
+over_four_weeks
+
+as
+
+
+with gap_table as
+
+(SELECT ssvid, year,
+  off_lat, off_lon, on_lat, on_lon, gap_hours, gap_distance_m/1000 as gap_distance_km,
+  st_geogpoint(off_lon, off_lat) as gap_start_point,
+  st_geogpoint(on_lon, on_lat) as gap_end_point,
+   (positions_per_day_off > 5 AND positions_per_day_on > 5)
+    AND positions_X_hours_before_sat >= 19 is_real_gap,
+    gap_hours/24 > 14 over_two_weeks
+ -- for spatial allocation, require start or end to be larger than 50 nautical miles
+ -- to avoid counting gaps that are in port
+
+ from `world-fishing-827.proj_ais_gaps_catena.ais_gap_events_features_v20210722`
+WHERE gap_hours >= 12
+    AND (off_distance_from_shore_m > 1852*50 AND on_distance_from_shore_m > 1852*50)
+    AND (DATE(gap_start) >= '2017-01-01' AND DATE(gap_end) <= '2019-12-31')
+ ),
+
+
+vessel_info as (
+select
+  ssvid,
+  year,
+  map_label(best_vessel_class) as vessel_class,
+  best_flag as flag
+from `world-fishing-827.gfw_research.fishing_vessels_ssvid_v20210301`
+),
+
+gap_raster_norm as (
+  select
+    x, y, hours, vessel_class, hours_diff, distance_km, days_to_start
+  from
+    proj_ais_gaps_catena.raster_gaps_norm_v20211021
+),
+
+
+
+with_mappings as (
+
+select *,
+map_distance(gap_distance_km) distance_km,
+map_hours_diff(gap_hours) hours_diff
+from gap_table
+join
+vessel_info
+using(ssvid,year)),
+
+with_mappings_center_course as
+(select *,
+90 - get_course_frommidpoint(gap_start_point, gap_end_point) theta,
+get_midpoint(gap_start_point, gap_end_point) midpoint,
+gap_hours / hours_diff as hours_adj,
+gap_distance_km / distance_km as dist_adj
+from with_mappings ),
+
+joined_with_raster as (
+
+select
+10*(x*cos(radians(theta)) - y*sin(radians(theta)))*dist_adj km_east, -- 10 because each grid cell is 10km
+10*(x*sin(radians(theta)) + y*cos(radians(theta)))*dist_adj km_north,
+st_y(midpoint) lat_center,
+st_x(midpoint) lon_center,
+hours*hours_adj as hours,
+gap_hours,
+vessel_class,
+flag,
+is_real_gap
+from gap_raster_norm
+join
+with_mappings_center_course
+using(vessel_class, hours_diff, distance_km)
+),
+
+
+with_rotated_lat_lon as (
+select *,
+lat_center + km_north/deglat2km() lat,
+lon_center + km_east/(deglat2km()*cos(radians(lat_center))) lon
+from joined_with_raster
+),
+
+with_distance_to_shore as (
+
+select * except(lat, lon), a.lat lat, a.lon lon
+from
+with_rotated_lat_lon a
+left join
+`pipe_static.distance_from_shore` b
+    ON
+      CAST( (a.lat*100) AS int64) = CAST( (b.lat*100) AS int64)
+      AND CAST((a.lon*100) AS int64) =CAST(b.lon*100 AS int64)
+
+)
+
+select
+vessel_class,
+is_real_gap,
+flag,
+gap_hours > 7*24 over_one_week,
+gap_hours > 14*24 over_two_weeks,
+gap_hours > 7*24*4 over_four_weeks,
+distance_from_shore_m >= 50*1852 as over_50_nm,
+distance_from_shore_m >= 200*1852 as over_200_nm,
+floor(lat*{{ scale }}) lat_index,
+floor(lon*{{ scale }}) lon_index,
+sum(hours) gap_hours
+from
+with_distance_to_shore
+group by lat_index, lon_index,
+vessel_class, over_50_nm, over_200_nm,
+over_one_week, over_four_weeks, over_two_weeks, flag,
+is_real_gap

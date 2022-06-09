@@ -16,10 +16,8 @@ DEPENDENCIES:
   - To properly calculate all gaps, it must have off and on events data
   run for every day up to and including today.
   - Input tables
-    - off_events_table (currently gfw_research_precursors.ais_off_events
-    but needs to be replaced and versioned)
-    - on_events_table (currently gfw_research_precursors.ais_on_events
-    but needs to replaced and versioned)
+    - off_events_table
+    - on_events_table
   - Input parameters (see jinja2 parameter list above)
 ##################################################################
 */
@@ -188,9 +186,14 @@ SELECT
   on_rfmo as gap_end_rfmo,
 
   # Classification model features
+  positions_6_hours_before,
   positions_12_hours_before,
+  positions_18_hours_before,
+  positions_24_hours_before,
+  positions_6_hours_before_sat,
   positions_12_hours_before_sat,
-  positions_12_hours_before_ter,
+  positions_18_hours_before_sat,
+  positions_24_hours_before_sat,
 
   # Flag for if gap is closed
   is_closed

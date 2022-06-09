@@ -1,0 +1,70 @@
+#standardSQL
+
+create temp function map_label(label string)
+as (
+  case when label ="drifting_longlines" then "drifting_longlines"
+  when label ="purse_seines" then "purse_seines"
+  when label ="other_purse_seines" then "purse_seines"
+  when label ="tuna_purse_seines" then "purse_seines"
+  when label ="cargo_or_tanker" then "cargo_or_tanker"
+  when label ="cargo" then "cargo_or_tanker"
+  when label ="tanker" then "cargo_or_tanker"
+  when label ="squid_jigger" then "squid_jigger"
+  when label ="tug" then "tug"
+  when label = "trawlers" then "trawlers"
+  else "other" end
+);
+
+
+create table
+   {{ output_table }}
+cluster by
+vessel_class,
+flag,
+over_200_nm
+
+as
+
+with fishing_vessels as (
+select 
+  ssvid, 
+  year,
+  map_label(best_vessel_class) as vessel_class,
+  best_flag as flag
+from `world-fishing-827.gfw_research.fishing_vessels_ssvid_v20210301`
+
+),
+
+positions as (
+select
+lat, lon, vessel_class, flag, hours, ifnull(nnet_score>.5, false) is_fishing,
+distance_from_shore_m > 200*1852 over_200_nm,
+-- greatest(0, hours-12) hours_in_gaps_over_12,
+-- least(12, hours) hours_in_gaps_under_12
+if(hours<12, hours, 0) hours_in_gaps_under_12,
+if(hours>=12, hours, 0) hours_in_gaps_over_12,
+from `world-fishing-827.gfw_research.pipe_v20201001_fishing` a
+join
+fishing_vessels b
+on a.ssvid = b.ssvid and extract(year from a._partitiontime) = b.year
+where seg_id in
+(select seg_id from `world-fishing-827.gfw_research.pipe_v20201001_segs` where good_seg and not overlapping_and_short)
+and date(_partitiontime) between "2017-01-01" and "2019-12-31"
+and distance_from_shore_m > 1852*50 -- only more than 50 nautical miles from shore
+)
+
+
+select
+floor(lat*{{ scale }}) lat_index,
+floor(lon*{{ scale }}) lon_index,
+vessel_class,
+flag,
+over_200_nm,
+sum(hours_in_gaps_over_12) hours_in_gaps_over_12,
+sum(hours_in_gaps_under_12) hours_in_gaps_under_12,
+sum(if(is_fishing, hours_in_gaps_over_12, 0)) fishing_hours_in_gaps_over_12,
+sum(if(is_fishing, hours_in_gaps_under_12, 0)) fishing_hours_in_gaps_under_12
+from positions
+group by lat_index, lon_index, vessel_class,
+flag,
+over_200_nm

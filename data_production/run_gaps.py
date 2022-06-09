@@ -65,18 +65,19 @@ proj_dataset = 'proj_ais_gaps_catena'
 destination_dataset = 'proj_ais_gaps_catena'
 
 pipeline_version = 'v20201001'
-pipeline_table = 'pipe_{}'.format(pipeline_version)
-segs_table = 'pipe_{}_segs'.format(pipeline_version)
-vi_version = 'v20210301'
-vd_version = 'v20220101'
+pipeline_dataset = f'pipe_production_{pipeline_version}'
+pipeline_table = 'research_messages'
+segs_table = 'research_segs'
+vi_version = 'v20220401'
+vd_version = 'v20220401'
 
 # Output tables version
-output_version = 'v20220301'
+output_version = 'v20220606'
 create_tables = True
 
 # Date range
 start_date = date(2017,1, 1)
-end_date = date(2020,12, 31)
+end_date = date(2019,12, 31)
 
 # Min gap hours
 min_gap_hours = 6
@@ -137,21 +138,21 @@ except NotFound:
 # Store commands
 cmds = []
 for t in tp:
-    cmd = utils.make_ais_events_table(pipeline_table="{}.{}".format("gfw_research", pipeline_table),
-                                segs_table="{}.{}".format("gfw_research", segs_table),
-                                event_type='off',
-                                date = t,
-                                min_gap_hours = min_gap_hours, 
-                                precursors_dataset=destination_dataset,
-                                destination_table=off_events_table)
+    cmd = utils.make_ais_events_table(
+        pipeline_table="{}.{}".format(pipeline_dataset, pipeline_table),
+        segs_table="{}.{}".format(pipeline_dataset, segs_table),
+        event_type='off',
+        date = t,
+        min_gap_hours = min_gap_hours, 
+        precursors_dataset=destination_dataset,
+        destination_table=off_events_table
+    )
     cmds.append(cmd)
 
-# +
 # test query
-# test_cmd = cmds[0].split('|')[0]
-# os.system(test_cmd)
+test_cmd = cmds[0].split('|')[0]
+os.system(test_cmd)
 # os.system(cmds[0])
-# -
 
 # Run queries
 utils.execute_commands_in_parallel(commands=cmds)
@@ -163,23 +164,60 @@ utils.execute_commands_in_parallel(commands=cmds)
 # Store commands
 on_cmds = []
 for t in tp:
-    cmd = utils.make_ais_events_table(pipeline_table="{}.{}".format("gfw_research", pipeline_table),
-                                segs_table="{}.{}".format("gfw_research", segs_table),
-                                event_type='on',
-                                date = t,
-                                min_gap_hours = min_gap_hours, 
-                                precursors_dataset=destination_dataset,
-                                destination_table=on_events_table)
+    cmd = utils.make_ais_events_table(
+        pipeline_table="{}.{}".format(pipeline_dataset, pipeline_table),
+        segs_table="{}.{}".format(pipeline_dataset, segs_table),
+        event_type='on',
+        date = t,
+        min_gap_hours = min_gap_hours, 
+        precursors_dataset=destination_dataset,
+        destination_table=on_events_table
+    )
     on_cmds.append(cmd)
 
-# +
 # test query
-# test_cmd = on_cmds[0].split('|')[0]
-# os.system(test_cmd)
-# -
+test_cmd = on_cmds[0].split('|')[0]
+os.system(test_cmd)
 
 # Run queries
 utils.execute_commands_in_parallel(commands=on_cmds)
+
+# Check for dates that did not complete properly and re-run.
+
+# %%bigquery missing_on_dates
+WITH
+--
+on_dates AS (
+  SELECT
+    DISTINCT _partitiontime as dates,
+    'on_events' as event
+  FROM `world-fishing-827.proj_ais_gaps_catena.ais_on_events_v20220606`
+),
+--
+all_dates AS (
+  SELECT
+  GENERATE_DATE_ARRAY('2017-01-01', '2019-12-31', INTERVAL 1 DAY) as dates
+)
+--
+SELECT 
+  dates 
+FROM all_dates, UNNEST(dates) as dates
+WHERE dates NOT IN (
+  SELECT DATE(dates) FROM on_dates
+)
+
+for d in missing_on_dates['dates']:
+    print(str(d))
+    cmd = utils.make_ais_events_table(
+        pipeline_table="{}.{}".format(pipeline_dataset, pipeline_table),
+        segs_table="{}.{}".format(pipeline_dataset, segs_table),
+        event_type='on',
+        date = str(d),
+        min_gap_hours = min_gap_hours, 
+        precursors_dataset=destination_dataset,
+        destination_table=on_events_table
+    )
+    os.system(cmd)
 
 # ### Gap events
 #
@@ -195,26 +233,28 @@ if create_tables:
     os.system(gap_tbl_cmd)
 
 latest_date = tp[-1]
-gap_cmd = utils.make_ais_gap_events_table(off_events_table = off_events_table,
-                                on_events_table = on_events_table,
-                                date = latest_date,
-                                precursors_dataset = destination_dataset,
-                                destination_dataset = destination_dataset,
-                                destination_table = gap_events_table)
+gap_cmd = utils.make_ais_gap_events_table(
+    off_events_table = off_events_table,
+    on_events_table = on_events_table,
+    date = latest_date,
+    precursors_dataset = destination_dataset,
+    destination_dataset = destination_dataset,
+    destination_table = gap_events_table
+)
 
-# +
 # test query
-# test_cmd = gap_cmd.split('|')[0]
+test_cmd = gap_cmd.split('|')[0]
+os.system(test_cmd)
 # os.system(test_cmd)
-# os.system(test_cmd)
-# -
 
 # Run command
 os.system(gap_cmd)
 
+# +
 # Update schema
-gap_schema_cmd = "bq update --schema=gaps/ais_gap_events.json {}.{}".format(destination_dataset, gap_events_table)
-os.system(gap_schema_cmd)
+# gap_schema_cmd = "bq update --schema=gaps/ais_gap_events.json {}.{}".format(destination_dataset, gap_events_table)
+# os.system(gap_schema_cmd)
+# -
 
 # ### Fishing vessel gaps
 #
@@ -268,10 +308,14 @@ if create_tables:
 # Produce dataset of gridded fishing effort (at quarter degree) for use by the drivers of suspected disabling model.
 
 # Destination tables
-fishing_table = 'gridded_fishing_{}'.format(output_version)
+fishing_table = f"gridded_fishing_{output_version}"
+fishing_brt_table = f"gridded_fishing_brt_{output_version}"
 
 fishing_cmd = utils.make_gridded_fishing_table(output_version = output_version,
-                                               pipeline_version = pipeline_version,
+                                               pipeline_table="{}.{}".format(pipeline_dataset, pipeline_table),
+                                               segs_table="{}.{}".format(pipeline_dataset, segs_table),
+                                               start_date = start_date,
+                                               end_date = end_date,
                                                vi_version = vi_version,
                                                destination_dataset = destination_dataset,
                                                destination_table = fishing_table)
@@ -279,7 +323,6 @@ fishing_cmd = utils.make_gridded_fishing_table(output_version = output_version,
 # +
 # test query
 # test_cmd = fishing_cmd.split('|')[0]
-# test_cmd
 # os.system(test_cmd)
 # fishing_cmd
 # -
@@ -287,6 +330,19 @@ fishing_cmd = utils.make_gridded_fishing_table(output_version = output_version,
 # Run query
 if create_tables:
     os.system(fishing_cmd)
+
+# Create fishing table further aggregated by just vessel class and month for input to BRT models.
+
+# +
+fishing_brt_cmd = utils.make_gridded_fishing_brt_table(gridded_fishing_table = fishing_table,
+                                                       destination_dataset = destination_dataset,
+                                                       destination_table = fishing_brt_table)
+
+#     print(fishing_brt_cmd)
+# -
+
+if create_tables:
+    os.system(fishing_brt_cmd)
 
 # # AIS Interpolation
 #
@@ -301,8 +357,6 @@ if create_tables:
 # First create empty date partitioned tables to store interpolated positions.
 
 # Destination tables
-# ais_positions_hourly = 'ais_positions_byssvid_hourly_{}'.format(output_version)
-# By seg_id
 ais_positions_hourly = 'ais_positions_byseg_hourly_{}'.format(output_version)
 ais_positions_hourly_fishing = 'ais_positions_byseg_hourly_fishing_{}'.format(output_version)
 loitering_positions_hourly = 'loitering_positions_byseg_hourly_{}'.format(output_version)
@@ -527,15 +581,7 @@ reception_dates[8:]
 #
 # Create the final gap events table that is used as an input to the model of suspected drivers of AIS disabling. This table takes the `ais_gap_events_vYYYYMMDD` table created above and adds a handful of additional model features, including the smoothed reception quality.
 
-gap_events_features_table = 'ais_gap_events_features_{}'.format(output_version)
-gap_events_features_table
-
-if create_tables:
-    gap_features_tbl_cmd = "bq mk --schema=gaps/ais_gap_events_features.json \
-    --time_partitioning_field=gap_start \
-    --time_partitioning_type=DAY {}.{}".format(destination_dataset, 
-                                               gap_events_features_table)
-    os.system(gap_features_tbl_cmd)
+gap_events_features_table = f'ais_gap_events_features_{output_version}'
 
 # +
 gap_features_cmd = utils.make_ais_gap_events_features_table(pipeline_version=pipeline_version,
@@ -547,15 +593,14 @@ gap_features_cmd = utils.make_ais_gap_events_features_table(pipeline_version=pip
                                                    destination_table=gap_events_features_table)
 
 # gap_features_cmd
+# -
 
-# +
 # test query
 # test_cmd = gap_features_cmd.split('|')[0]
 # os.system(test_cmd)
-# -
+gap_features_cmd
 
 # Run gap features query
-# WARNING: BIG QUERY (~3.5 TB)
 if create_tables:
     os.system(gap_features_cmd)
 
@@ -697,11 +742,15 @@ os.mkdir(results_version_dir)
 
 # %%bigquery gap_events_features_df
 SELECT * 
-FROM `world-fishing-827.scratch_tyler.ais_gap_events_features_v20210722` 
+FROM `proj_ais_gaps_catena.ais_gap_events_features_v20220606` 
 WHERE gap_hours >= 12
-AND gap_start < '2021-01-01'
+AND gap_start < '2020-01-01'
+AND gap_end < '2020-01-01'
 
-gap_events_features_df.to_csv('gap_events_features_{}.csv'.format(output_version), index = False)
+gap_events_features_df.to_csv(f'{results_version_dir}/gap_events_features_{output_version}.zip', 
+                              index = False,
+                              compression = dict(method='zip', archive_name=f'gap_events_features_{output_version}.zip')
+                             )
 
 # Download loitering events:
 
@@ -725,8 +774,11 @@ gridded_loitering_df.to_csv('{d}/loitering_quarter_degree_{v}_2017_to_2020.csv'.
 
 # %%bigquery gridded_fishing_df
 SELECT *
-FROM proj_ais_gaps_catena.gridded_fishing_v20210722
+FROM proj_ais_gaps_catena.gridded_fishing_brt_v20220606
 
-gridded_fishing_df.to_csv('{d}/vessel_presence_quarter_degree_v20210722_2017_to_2019.csv'.format(d = results_version_dir), index = False)
+gridded_fishing_df.to_csv(f'{results_version_dir}/vessel_presence_quarter_degree_{output_version}_2017_to_2019.zip', 
+                          index = False,
+                          compression = dict(method='zip', archive_name=f'vessel_presence_quarter_degree_{output_version}_2017_to_2019.csv')
+                         )
 
 
