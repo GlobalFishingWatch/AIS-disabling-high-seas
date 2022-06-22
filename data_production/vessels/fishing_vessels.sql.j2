@@ -1,0 +1,59 @@
+#standardSQL
+--
+-- Function to condense vessel classes
+CREATE TEMP FUNCTION map_label(label string) AS (
+  case when label ="drifting_longlines" then "drifting_longlines"
+  when label ="tuna_purse_seines" then "tuna_purse_seines"
+  when label ="squid_jigger" then "squid_jigger"
+  when label = "trawlers" then "trawlers"
+  else "other" end
+);
+--
+-- Function to extract year from analysis date range
+CREATE TEMP FUNCTION get_year(start_date string) AS (
+  EXTRACT(YEAR from DATE(start_date))
+);
+--
+-- Table definition
+--
+CREATE OR REPLACE TABLE
+{{ destination_dataset }}.{{ destination_table }}
+AS
+--
+-- QUERY
+--
+WITH
+--
+-- Fishing vessels
+--
+fishing_vessels AS (
+SELECT *
+FROM `gfw_research.fishing_vessels_ssvid_{{ vi_version }}`
+WHERE year BETWEEN get_year('{{ start_date }}') AND get_year('{{ end_date }}')
+),
+--
+# Best vessel class
+vessel_info AS (
+SELECT
+  ssvid,
+  year,
+  best.best_flag as flag,
+  # Overwrite pole and line vessels as squid when registries say their squid
+  IF(best.registry_net_disagreement = 'squid_jigger,pole_and_line',
+     'squid_jigger', best.best_vessel_class) as vessel_class,
+  best.best_length_m as vessel_length_m,
+  best.best_tonnage_gt as vessel_tonnage_gt
+FROM `gfw_research.vi_ssvid_byyear_{{ vi_version }}`
+),
+--
+# Add in vessel class and condense vessel classes
+all_vessel_info AS (
+SELECT
+  * EXCEPT(vessel_class),
+  map_label(vessel_class) as vessel_class
+FROM fishing_vessels
+LEFT JOIN vessel_info
+USING(ssvid, year)
+)
+
+SELECT * FROM all_vessel_info

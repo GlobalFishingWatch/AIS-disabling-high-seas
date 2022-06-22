@@ -18,6 +18,9 @@ import pyseas.styles
 import pyseas.cm
 
 from google.cloud import bigquery
+
+import config
+
 # Establish BigQuery connection
 client = bigquery.Client()
 
@@ -25,15 +28,15 @@ client = bigquery.Client()
 General parameters
 """
 # Min/Max coordinates
-min_lon, min_lat, max_lon, max_lat  = -180, -90, 180, 90
+min_lon, min_lat, max_lon, max_lat  = config.min_lon, config.min_lat, config.max_lon, config.max_lat
 
 # Number of lat/lon bins
-inverse_delta_degrees = 1
-n_lat = (max_lat - min_lat) * inverse_delta_degrees
-n_lon = (max_lon - min_lon) * inverse_delta_degrees
+inverse_delta_degrees = config.inverse_delta_degrees
+n_lat = config.n_lat
+n_lon = config.n_lon
 
-lons = np.arange(min_lon, max_lon+1)
-lats = np.arange(min_lat, max_lat+1)
+lons = config.lons
+lats = config.lats
 
 def execute_commands_in_parallel(commands):
     '''This takes a list of commands and runs them in parallel
@@ -349,7 +352,7 @@ def make_hourly_gap_interpolation_table(destination_table,
     YYYY_MM_DD = date[:4] + "-" + date[4:6] + "-" + date[6:8]
 
     # Format command
-    cmd = '''jinja2 interpolation/hourly_gap_interpolation.sql.j2    \
+    cmd = '''jinja2 data_production/interpolation/hourly_gap_interpolation.sql.j2    \
        -D YYYY_MM_DD="{YYYY_MM_DD}" \
        -D input_version="{gap_version}" \
        -D destination_dataset="{destination_dataset}" \

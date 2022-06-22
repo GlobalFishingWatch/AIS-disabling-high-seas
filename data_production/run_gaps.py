@@ -15,7 +15,7 @@
 
 # # Generate AIS reception and gap events datasets
 #
-# This notebook is a wrapper file for producing a complete set of results and inputs for Welch et al. (2021). It contains code for the following: 
+# This notebook is a wrapper file for producing a complete set of results and inputs for Welch et al. (2021). It contains code for the following:
 #
 # 1. Generate raw AIS gap events greater than 12 hours
 # 2. Generate monthly AIS reception maps
@@ -45,7 +45,8 @@ import pyseas.styles
 import pyseas.cm
 
 # project specific functions
-import utils 
+import utils
+import config
 
 # %load_ext autoreload
 # %load_ext google.cloud.bigquery
@@ -59,37 +60,32 @@ client = bigquery.Client()
 
 # +
 # Input BQ datasets/tables
-gfw_research = 'gfw_research'
-gfw_research_precursors = 'gfw_research_precursors'
-proj_dataset = 'proj_ais_gaps_catena'
-destination_dataset = 'proj_ais_gaps_catena'
+gfw_research = config.gfw_research
+gfw_research_precursors = config.gfw_research_precursors
+proj_dataset = config.proj_dataset
+destination_dataset = config.destination_dataset
 
-pipeline_version = 'v20201001'
+pipeline_version = config.pipeline_version
 pipeline_dataset = f'pipe_production_{pipeline_version}'
-pipeline_table = 'research_messages'
-segs_table = 'research_segs'
-vi_version = 'v20220401'
-vd_version = 'v20220401'
+pipeline_table = config.pipeline_table
+segs_table = config.segs_table
+vi_version = config.vi_version
+vd_version = config.vd_version
 
 # Output tables version
-output_version = 'v20220606'
-create_tables = True
+output_version = config.output_version
+create_tables = config.create_tables
 
 # Date range
-start_date = date(2017,1, 1)
-end_date = date(2019,12, 31)
+start_date = config.start_date
+end_date = config.end_date
 
 # Min gap hours
-min_gap_hours = 6
+min_gap_hours = config.min_gap_hours
 # -
 
-# Generate list of dates to produce for analysis.
-
-# Generate list of dates to run
-dates_to_run = utils.daterange(start_date, end_date)
-tp = []
-for dt in dates_to_run:
-    tp.append(dt.strftime("%Y-%m-%d"))
+# list of dates to run
+tp = config.tp
 
 # # AIS Gaps dataset
 #
@@ -103,9 +99,9 @@ for dt in dates_to_run:
 # First, create empty tables for all three tables.
 
 # Destination tables
-off_events_table = 'ais_off_events_{}'.format(output_version)
-on_events_table = 'ais_on_events_{}'.format(output_version)
-gap_events_table = 'ais_gap_events_{}'.format(output_version)
+off_events_table = config.off_events_table
+on_events_table = config.on_events_table
+gap_events_table = config.gap_events_table
 
 # Create tables for off/on events.
 
@@ -128,7 +124,7 @@ except NotFound:
     print("Table {d}.{t} is not found.".format(d = destination_dataset, t = on_events_table))
     print("Creating table {d}.{t}.".format(d = destination_dataset, t = on_events_table))
     # Create on events table if needed
-    utils.make_bq_partitioned_table(destination_dataset, on_events_table)     
+    utils.make_bq_partitioned_table(destination_dataset, on_events_table)
 # -
 
 # ### Off events
@@ -143,7 +139,7 @@ for t in tp:
         segs_table="{}.{}".format(pipeline_dataset, segs_table),
         event_type='off',
         date = t,
-        min_gap_hours = min_gap_hours, 
+        min_gap_hours = min_gap_hours,
         precursors_dataset=destination_dataset,
         destination_table=off_events_table
     )
@@ -169,7 +165,7 @@ for t in tp:
         segs_table="{}.{}".format(pipeline_dataset, segs_table),
         event_type='on',
         date = t,
-        min_gap_hours = min_gap_hours, 
+        min_gap_hours = min_gap_hours,
         precursors_dataset=destination_dataset,
         destination_table=on_events_table
     )
@@ -199,8 +195,8 @@ all_dates AS (
   GENERATE_DATE_ARRAY('2017-01-01', '2019-12-31', INTERVAL 1 DAY) as dates
 )
 --
-SELECT 
-  dates 
+SELECT
+  dates
 FROM all_dates, UNNEST(dates) as dates
 WHERE dates NOT IN (
   SELECT DATE(dates) FROM on_dates
@@ -213,7 +209,7 @@ for d in missing_on_dates['dates']:
         segs_table="{}.{}".format(pipeline_dataset, segs_table),
         event_type='on',
         date = str(d),
-        min_gap_hours = min_gap_hours, 
+        min_gap_hours = min_gap_hours,
         precursors_dataset=destination_dataset,
         destination_table=on_events_table
     )
@@ -228,7 +224,7 @@ for d in missing_on_dates['dates']:
 if create_tables:
     gap_tbl_cmd = "bq mk --schema=gaps/ais_gap_events.json \
     --time_partitioning_field=gap_start \
-    --time_partitioning_type=DAY {}.{}".format(destination_dataset, 
+    --time_partitioning_type=DAY {}.{}".format(destination_dataset,
                                                gap_events_table)
     os.system(gap_tbl_cmd)
 
@@ -260,7 +256,7 @@ os.system(gap_cmd)
 #
 # Lastly, create the final gaps model dataset by doing the following:
 #
-# + subset the `ais_gap_events_vYYYYMMDD` dataset to only include fishing vessels 
+# + subset the `ais_gap_events_vYYYYMMDD` dataset to only include fishing vessels
 # + Add additional model variables not calculated at the time of the gap events creation:
 
 # # Loitering
@@ -272,7 +268,7 @@ gridded_loitering_table = 'gridded_loitering_{}'.format(output_version)
 
 # ## Loitering events and gridded loitering
 #
-# Query all carrier loitering events between 2017-2019. This query does not exclude loitering events that have overlapping encounters under the assumption that carrier vessels having encounters could also be meeting non-broadcasting fishing vessels at the same time. 
+# Query all carrier loitering events between 2017-2019. This query does not exclude loitering events that have overlapping encounters under the assumption that carrier vessels having encounters could also be meeting non-broadcasting fishing vessels at the same time.
 #
 # After extracting events, produce a gridded dataset of all loitering events at quarter degree resolution.
 
@@ -383,7 +379,7 @@ except NotFound:
     print("Creating table {d}.{t}.".format(d = destination_dataset, t = ais_positions_hourly_fishing))
     # Create table if needed
     utils.make_bq_partitioned_table(destination_dataset, ais_positions_hourly_fishing)
-        
+
 # loitering positions
 try:
     client.get_table("{d}.{t}".format(d = destination_dataset, t = loitering_positions_hourly))
@@ -436,7 +432,7 @@ utils.execute_commands_in_parallel(int_fishing_cmds)
 #
 # **1. Calculate measured reception** - Calculates measured reception quality by AIS Class as the average number of positions received by a vessel in a day per one-degree grid cell
 #
-# **2. Interpolate reception** - To produce global maps of reception quality (e.g. not just in cells with AIS data) use a smoothing function to interpolate reception quality. 
+# **2. Interpolate reception** - To produce global maps of reception quality (e.g. not just in cells with AIS data) use a smoothing function to interpolate reception quality.
 #
 # ### Create tables
 
@@ -459,10 +455,10 @@ reception_dates = pd.date_range(start_date, end_date, freq='1M') - pd.offsets.Mo
 mr_cmds = []
 for r in reception_dates:
 #     print(str(r.date()))
-    cmd = utils.make_reception_measured_table(destination_table = sat_reception_measured, 
+    cmd = utils.make_reception_measured_table(destination_table = sat_reception_measured,
                                         destination_dataset = destination_dataset,
-                                        start_date = r, 
-                                        vi_version = vi_version, 
+                                        start_date = r,
+                                        vi_version = vi_version,
                                         segs_table="{}.{}".format("gfw_research", segs_table),
                                         output_version = output_version)
 
@@ -478,7 +474,7 @@ utils.execute_commands_in_parallel(mr_cmds)
 
 # ### Smoothed reception quality
 #
-# Next, interpolate the measured reception quality using a radial basis function. 
+# Next, interpolate the measured reception quality using a radial basis function.
 
 for r in reception_dates:
     print(str(r.date()))
@@ -503,7 +499,7 @@ for r in reception_dates:
                                                                      )
     # Query data
     month_reception = pd.read_gbq(month_reception_query, project_id='world-fishing-827', dialect='standard')
-    
+
     utils.plot_reception_quality(reception_start_date = r,
                                  destination_dataset = destination_dataset,
                                  reception_smoothed_table = sat_reception_smoothed,
@@ -516,13 +512,13 @@ for r in reception_dates:
 """
 Query smoothed reception data
 """
-month_reception_query = '''SELECT 
+month_reception_query = '''SELECT
                            lat_bin,
                            lon_bin,
                            class,
                            AVG(positions_per_day) as positions_per_day
                            FROM `{d}.{t}`
-                           WHERE _partitiontime BETWEEN "2017-01-01" 
+                           WHERE _partitiontime BETWEEN "2017-01-01"
                            AND "2019-12-01"
                            GROUP BY 1,2,3'''.format(d = destination_dataset,
                                                       t = sat_reception_smoothed)
@@ -553,10 +549,10 @@ if create_tables:
 mr_all_speed_cmds = []
 for r in reception_dates:
 #     print(str(r.date()))
-    cmd = utils.make_reception_measured_table(destination_table = sat_reception_measured, 
+    cmd = utils.make_reception_measured_table(destination_table = sat_reception_measured,
                                         destination_dataset = destination_dataset,
-                                        start_date = r, 
-                                        vi_version = vi_version, 
+                                        start_date = r,
+                                        vi_version = vi_version,
                                         segs_table="{}.{}".format("gfw_research", segs_table),
                                         output_version = output_version,
                                         include_all_speeds = "True")
@@ -623,10 +619,10 @@ if create_tables:
 mr_no_disable_cmds = []
 for r in reception_dates:
 #     print(str(r.date()))
-    cmd = utils.make_reception_measured_table(destination_table = sat_reception_measured_no_disabling_tbl, 
+    cmd = utils.make_reception_measured_table(destination_table = sat_reception_measured_no_disabling_tbl,
                                         destination_dataset = destination_dataset,
-                                        start_date = r, 
-                                        vi_version = vi_version, 
+                                        start_date = r,
+                                        vi_version = vi_version,
                                         segs_table="{}.{}".format("gfw_research", segs_table),
                                         output_version = output_version,
                                         include_all_speeds = "False",
@@ -649,42 +645,6 @@ for r in reception_dates:
                                       reception_measured_table = sat_reception_measured_no_disabling_tbl,
                                       destination_dataset = destination_dataset,
                                       destination_table = sat_reception_smoothed_no_disabling_tbl)
-
-# # Time lost to gaps
-#
-# Estimate the time lost to suspected disabling
-#
-# ### Interpolate positions during AIS gap events
-
-# Table for interpolated gap positions
-gap_positions_hourly_table = "gap_positions_hourly_{}".format(output_version)
-
-try:
-    client.get_table("{d}.{t}".format(d = destination_dataset, t = gap_positions_hourly_table))
-    print("Table {d}.{t} already exists".format(d = destination_dataset, t = gap_positions_hourly_table))
-except NotFound:
-    print("Table {d}.{t} is not found.".format(d = destination_dataset, t = gap_positions_hourly_table))
-    print("Creating table {d}.{t}".format(d = destination_dataset, t = gap_positions_hourly_table))
-    # create interpolated gap event positions table if needed
-    utils.make_bq_partitioned_table(destination_dataset, gap_positions_hourly_table)
-
-# Store commands
-gap_int_cmds = []
-for t in tp:
-    cmd = utils.make_hourly_gap_interpolation_table(date = t,
-                                                    output_version = output_version,
-                                                    destination_dataset = destination_dataset,
-                                                    destination_table = gap_positions_hourly_table)
-    gap_int_cmds.append(cmd)
-
-# test query
-test_cmd = gap_int_cmds[0].split('|')[0]
-os.system(test_cmd)
-
-# Run commands
-utils.execute_commands_in_parallel(gap_int_cmds)
-
-
 
 # # Copy Tables
 #
@@ -732,7 +692,7 @@ if copy_tables:
 # + Loitering events
 # + Gridded fishing
 
-# Create results folder 
+# Create results folder
 results_dir = "../results"
 # os.mkdir(results_dir)
 # Create folder for specific results version
@@ -741,13 +701,13 @@ print(results_version_dir)
 os.mkdir(results_version_dir)
 
 # %%bigquery gap_events_features_df
-SELECT * 
-FROM `proj_ais_gaps_catena.ais_gap_events_features_v20220606` 
+SELECT *
+FROM `proj_ais_gaps_catena.ais_gap_events_features_v20220606`
 WHERE gap_hours >= 12
 AND gap_start < '2020-01-01'
 AND gap_end < '2020-01-01'
 
-gap_events_features_df.to_csv(f'{results_version_dir}/gap_events_features_{output_version}.zip', 
+gap_events_features_df.to_csv(f'{results_version_dir}/gap_events_features_{output_version}.zip',
                               index = False,
                               compression = dict(method='zip', archive_name=f'gap_events_features_{output_version}.zip')
                              )
@@ -776,9 +736,7 @@ gridded_loitering_df.to_csv('{d}/loitering_quarter_degree_{v}_2017_to_2020.csv'.
 SELECT *
 FROM proj_ais_gaps_catena.gridded_fishing_brt_v20220606
 
-gridded_fishing_df.to_csv(f'{results_version_dir}/vessel_presence_quarter_degree_{output_version}_2017_to_2019.zip', 
+gridded_fishing_df.to_csv(f'{results_version_dir}/vessel_presence_quarter_degree_{output_version}_2017_to_2019.zip',
                           index = False,
                           compression = dict(method='zip', archive_name=f'vessel_presence_quarter_degree_{output_version}_2017_to_2019.csv')
                          )
-
-
