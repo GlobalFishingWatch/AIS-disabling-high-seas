@@ -2,8 +2,8 @@
 
 import os
 import subprocess
-import utils
-import config
+from ais_disabling import utils
+from ais_disabling import config
 from google.cloud.exceptions import NotFound
 from google.cloud import bigquery
 from jinja2 import Template
@@ -23,7 +23,7 @@ gap_positions_hourly_table = config.gap_positions_hourly_table
 raster_gaps_table = config.raster_gaps_table
 
 # Which steps to run
-steps_to_run = ['grid_fishing']
+steps_to_run = ['normalize_gaps']
 
 #########################################################################
 # 1. Interpolate positions during AIS gap events

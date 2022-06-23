@@ -1,8 +1,9 @@
 # run_vessels.py
 
 import subprocess
-import config
 from jinja2 import Template
+
+from ais_disabling import config
 
 #########################################################################
 # VESSEL LIST

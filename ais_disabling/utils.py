@@ -19,7 +19,7 @@ import pyseas.cm
 
 from google.cloud import bigquery
 
-import config
+from . import config
 
 # Establish BigQuery connection
 client = bigquery.Client()

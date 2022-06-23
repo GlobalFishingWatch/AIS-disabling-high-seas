@@ -45,8 +45,8 @@ import pyseas.styles
 import pyseas.cm
 
 # project specific functions
-import utils
-import config
+from ais_disabling import utils
+from ais_disabling import config
 
 # %load_ext autoreload
 # %load_ext google.cloud.bigquery

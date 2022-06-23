@@ -8,15 +8,12 @@
 import pandas as pd
 import numpy as np
 
+from ais_disabling import config
+
 query = f"""
 SELECT *
-FROM `world-fishing-827.proj_ais_gaps_catena.ais_gap_events_features_v20220606`
-WHERE gap_hours >= 12
-AND positions_per_day_off > 10
-AND positions_12_hours_before_sat >= 14
-AND off_distance_from_shore_m > 1852 * 50
-AND DATE(gap_start) >= '2017-01-01'
-AND DATE(gap_end) <= '2019-12-31'
+FROM `{config.destination_dataset}.{config.gap_events_features_table}`
+{config.gap_filters}
 """
 
 gap_df = pd.read_gbq(query, project_id="world-fishing-827")

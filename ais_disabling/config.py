@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, date
 ###############################################
 
 # Test run queries?
-test_run = False
+test_run = True
 
 # BQ datasets/tables
 gfw_research = 'gfw_research'
