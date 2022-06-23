@@ -53,6 +53,18 @@ for dt in dates_to_run:
 reception_dates = pd.date_range(start_date, end_date, freq='1M') - pd.offsets.MonthBegin(1)
 
 ###############################################
+# Suspected disabling event filters
+###############################################
+
+gap_filters = f"""
+WHERE gap_hours >= 12
+AND (DATE(gap_start) >= '{tp[0]}' AND DATE(gap_end) <= '{tp[-1]}')
+AND off_distance_from_shore_m > 1852*50
+AND positions_per_day_off > 10
+AND positions_12_hours_before_sat >= 14
+"""
+
+###############################################
 # Destination tables
 ###############################################
 

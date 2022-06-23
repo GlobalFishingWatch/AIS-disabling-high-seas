@@ -3,7 +3,7 @@
 -- TABLE DEFINITION
 --
   create table
-     {{ output_table }}
+     `{{ destination_dataset }}.{{ output_table }}`
   cluster by
   vessel_class,
   flag,
@@ -22,7 +22,7 @@ fishing_vessels AS (
     year,
     vessel_class,
     best_flag as flag
-  FROM `{{ destination_dataset}}.{{ fishing_vessels_table }}`
+  FROM `{{ destination_dataset }}.{{ fishing_vessels_table }}`
 ),
 --
 --

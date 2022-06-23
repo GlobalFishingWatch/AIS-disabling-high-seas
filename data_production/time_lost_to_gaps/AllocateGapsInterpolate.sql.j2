@@ -3,7 +3,7 @@
 -- TABLE DEFINITION
 --
 create table
-   {{ output_table }}
+   `{{ destination_dataset}}.{{ output_table }}`
 cluster by
 vessel_class,
 is_real_gap,

@@ -17,7 +17,7 @@ WITH
 --
 source_table as (
   SELECT *
-  FROM {{ raster_gaps_table }}
+  FROM {{ destination_dataset}}.{{ raster_gaps_table }}
 ),
 --
 --
@@ -33,7 +33,7 @@ grouped_table as (
     avg(dist_to_line_km) dist_to_line_km,
     avg(dist_to_start_km) dist_to_start_km,
     avg(dist_to_end_km) dist_to_end_km
-  FROM unioned_tables
+  FROM source_table
   GROUP BY x, y, vessel_class, hours_diff, days_to_start, distance_km
 ),
 --

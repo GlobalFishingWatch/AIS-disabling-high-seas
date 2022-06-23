@@ -23,7 +23,7 @@ gap_positions_hourly_table = config.gap_positions_hourly_table
 raster_gaps_table = config.raster_gaps_table
 
 # Which steps to run
-steps_to_run = ['normalize_gaps']
+steps_to_run = ['grid_fishing']
 
 #########################################################################
 # 1. Interpolate positions during AIS gap events
@@ -105,6 +105,7 @@ if 'normalize_gaps' in steps_to_run:
         print(query)
 
     if config.test_run is False:
+        # print(query)
         subprocess.run("bq query".split(), input=bytes(query, "utf-8"))
 
 #########################################################################
@@ -123,9 +124,10 @@ if 'allocate_gaps_raster' in steps_to_run:
         destination_dataset = config.destination_dataset,
         fishing_vessels_table = config.fishing_vessels_table,
         gap_events_features_table = config.gap_events_features_table,
+        raster_gaps_norm_table = config.raster_gaps_norm_table,
         start_date = str(config.start_date),
         end_date = str(config.end_date),
-        output_table = config.raster_gaps_norm_table,
+        output_table = config.gaps_allocated_raster_table,
         scale = 1
         )
 
@@ -133,6 +135,7 @@ if 'allocate_gaps_raster' in steps_to_run:
         print(query)
 
     if config.test_run is False:
+        # print(query)
         subprocess.run("bq query".split(), input=bytes(query, "utf-8"))
 
 #
@@ -150,7 +153,7 @@ if 'allocate_gaps_interpolate' in steps_to_run:
         gap_positions_hourly_table = config.gap_positions_hourly_table,
         start_date = str(config.start_date),
         end_date = str(config.end_date),
-        output_table = config.raster_gaps_norm_table,
+        output_table = config.gaps_allocated_interpolate_table,
         scale = 1
         )
 
@@ -158,6 +161,7 @@ if 'allocate_gaps_interpolate' in steps_to_run:
         print(query)
 
     if config.test_run is False:
+        # print(query)
         subprocess.run("bq query".split(), input=bytes(query, "utf-8"))
 
 #########################################################################
@@ -186,4 +190,5 @@ if 'grid_fishing' in steps_to_run:
         print(query)
 
     if config.test_run is False:
+        # print(query)
         subprocess.run("bq query".split(), input=bytes(query, "utf-8"))
