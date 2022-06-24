@@ -148,7 +148,11 @@ rsconnect/
 *.ipynb
 
 # Paper figures
-Analysis/figures*/*
+analysis/figures*/*
 
 # tmp csv
 data_production/tmp.csv
+
+# model selection
+model_selection/models/*
+model_selection/data/*

@@ -76,6 +76,7 @@ off_events_table = f'ais_off_events_{output_version}'
 on_events_table = f'ais_on_events_{output_version}'
 gap_events_table = f'ais_gap_events_{output_version}'
 gap_events_features_table = f'ais_gap_events_features_{output_version}'
+gap_events_labeled_table = f'ais_gap_events_labeled_{output_version}'
 
 # Loitering
 loitering_events_table = f'loitering_events_{output_version}'
