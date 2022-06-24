@@ -1,14 +1,5 @@
 #standardSQL
 
-create temp function map_label(label string)
-as (
-  case when label ="drifting_longlines" then "drifting_longlines"
-  when label ="tuna_purse_seines" then "tuna_purse_seines"
-  when label ="squid_jigger" then "squid_jigger"
-  when label = "trawlers" then "trawlers"
-  else "other" end
-);
-
 create temp function radians(x float64) as (
     3.14159265359 * x / 180
 );
@@ -132,9 +123,10 @@ create temp function lon_diff_tokm(lon1 float64, lon2 float64, lat float64) as
 
 
 create table
-  {{ output_table }}
+  {{ destination_dataset}}.{{ output_table }}
 cluster by
-  vessel_class, hours_diff,
+  vessel_class,
+  hours_diff,
   distance_km
 as
 
@@ -144,10 +136,9 @@ with
 vessel_info as (
     select distinct
          ssvid,
-         map_label(best_vessel_class) as best_vessel_class
-    FROM  gfw_research.fishing_vessels_ssvid_v20210301
+         vessel_class as best_vessel_class
+    FROM  {{ destination_dataset}}.{{ fishing_vessels_table }}
 ),
-
 
 time_ranges as (
     select
@@ -269,13 +260,14 @@ position_table_hours as (
                 )
                 as row_hour
             from
-                `world-fishing-827.gfw_research.pipe_v20201001_fishing`
-            where
-                _partitiontime between TIMESTAMP("2019-01-01")
-                                   and TIMESTAMP("2019-12-31")
-                and seg_id in (
+                `{{ pipeline_dataset}}.{{pipeline_table}}`
+            where _partitiontime between
+                  TIMESTAMP("{{ start_date }}") and TIMESTAMP("{{ end_date }}")
+              and seg_id in (
                     select seg_id
- from gfw_research.pipe_v20201001_segs where good_seg
+                    from `{{ pipeline_dataset}}.{{segs_table}}`
+                    where good_seg
+                    and not overlapping_and_short
                 )
         )
     where row_hour = 1
@@ -354,15 +346,10 @@ valid_message_pairs as (
                 st_geogpoint(b.lon, b.lat)
             ) / 1000
             between a.min_distance and a.max_distance
-    where
- --       (valid_messages.distance_from_shore_m > 1852 * 100
-  --       and b.distance_from_shore_m > 1852 * 100)
-  --      and
-  --      (valid_messages.distance_from_shore_m > 1852 * 200
-  --       or b.distance_from_shore_m > 1852 * 200)
-
-         (a.distance_from_shore_m > 1852 * 50
-           and b.distance_from_shore_m > 1852 * 50)
+    where (
+    a.distance_from_shore_m > 1852 * 50
+    and b.distance_from_shore_m > 1852 * 50
+    )
 ),
 
 row_number as (

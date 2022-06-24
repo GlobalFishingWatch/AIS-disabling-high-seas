@@ -1,56 +1,37 @@
-# ---
-# jupyter:
-#   jupytext:
-#     text_representation:
-#       extension: .py
-#       format_name: light
-#       format_version: '1.5'
-#       jupytext_version: 1.6.0
-#   kernelspec:
-#     display_name: Python 3 (ipykernel)
-#     language: python
-#     name: python3
-# ---
+# si_gap_stats.py
 
-# # AIS disabling event summary statistics
-#
+######################################################################
+# AIS disabling event summary statistics
 # Calculate summary statistics about the AIS disabling events dataset.
+######################################################################
 
-# +
 import pandas as pd
 import numpy as np
 
-# %load_ext google.cloud.bigquery
+from ais_disabling import config
 
-# +
-# %%bigquery gap_df
+query = f"""
+SELECT *
+FROM `{config.destination_dataset}.{config.gap_events_features_table}`
+{config.gap_filters}
+"""
 
-SELECT 
-*
-FROM `world-fishing-827.proj_ais_gaps_catena.ais_gap_events_features_v20210722`
-WHERE gap_hours >= 12
-AND (positions_per_day_off > 5 AND positions_per_day_on > 5)
-AND positions_X_hours_before_sat >= 19
-AND off_distance_from_shore_m > 1852 * 50
-AND on_distance_from_shore_m > 1852 * 50
-AND DATE(gap_start) >= '2017-01-01' 
-AND DATE(gap_end) <= '2019-12-31'
-# -
-
+gap_df = pd.read_gbq(query, project_id="world-fishing-827")
 gap_df.columns
 
 # Calculate summary stats about the number of vessels, flag states, geartypes with disabling events.
 
-gap_df['gap_id'].nunique()
+n_gaps = gap_df['gap_id'].nunique()
+print(f"{n_gaps} unique gap ids")
 
 n_ssvid = gap_df['ssvid'].nunique()
-n_ssvid
+print(f"{n_ssvid} unique MMSI")
 
 n_flags = gap_df['flag'].nunique()
-n_flags
+print(f"{n_flags} unique flag states")
 
-gap_df['gap_hours'].median()
+median_gap_hours = gap_df['gap_hours'].median()
+print(f"{median_gap_hours} median gap hours")
 
-gap_df['gap_distance_m'].median()/1000
-
-
+median_gap_distance_km = gap_df['gap_distance_m'].median()/1000
+print(f"{median_gap_distance_km} median gap distance in km")

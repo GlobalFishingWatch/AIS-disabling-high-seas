@@ -1,4 +1,3 @@
-
 #standardSQL
 
 create temp function radians(x float64) as (
@@ -93,16 +92,6 @@ create temp function reasonable_lon(lon float64) AS
 when lon < -180 then lon + 360
 else lon end);
 
-
-create temp function map_label(label string)
-as (
-  case when label ="drifting_longlines" then "drifting_longlines"
-  when label ="tuna_purse_seines" then "tuna_purse_seines"
-  when label ="squid_jigger" then "squid_jigger"
-  when label = "trawlers" then "trawlers"
-  else "other" end
-);
-
 create temp function map_distance(d float64)
 as (
 case when d < 10/2+3/2 then 3
@@ -136,128 +125,170 @@ when h >= 36 and h < 72 then 48
 
 else null end
 );
-
-
-create table
-   {{ output_table }}
+--
+-- TABLE DEFINITION
+--
+CREATE OR REPLACE TABLE
+   `{{ destination_dataset}}.{{ output_table }}`
 cluster by
 vessel_class,
 is_real_gap,
 over_200_nm,
 over_four_weeks
 
-as
-
-
-with gap_table as
-
-(SELECT ssvid, year,
-  off_lat, off_lon, on_lat, on_lon, gap_hours, gap_distance_m/1000 as gap_distance_km,
-  st_geogpoint(off_lon, off_lat) as gap_start_point,
-  st_geogpoint(on_lon, on_lat) as gap_end_point,
-   (positions_per_day_off > 5 AND positions_per_day_on > 5)
-    AND positions_X_hours_before_sat >= 19 is_real_gap,
-    gap_hours/24 > 14 over_two_weeks
- -- for spatial allocation, require start or end to be larger than 50 nautical miles
- -- to avoid counting gaps that are in port
-
- from `world-fishing-827.proj_ais_gaps_catena.ais_gap_events_features_v20210722`
-WHERE gap_hours >= 12
-    AND (off_distance_from_shore_m > 1852*50 AND on_distance_from_shore_m > 1852*50)
-    AND (DATE(gap_start) >= '2017-01-01' AND DATE(gap_end) <= '2019-12-31')
- ),
-
-
-vessel_info as (
-select
+AS
+--
+-- QUERY
+--
+WITH
+--
+-- Suspected disabling events from the gaps table
+--
+gap_table AS (
+SELECT
   ssvid,
   year,
-  map_label(best_vessel_class) as vessel_class,
-  best_flag as flag
-from `world-fishing-827.gfw_research.fishing_vessels_ssvid_v20210301`
+  off_lat,
+  off_lon,
+  on_lat,
+  on_lon,
+  gap_hours,
+  gap_distance_m/1000 as gap_distance_km,
+  st_geogpoint(off_lon, off_lat) as gap_start_point,
+  st_geogpoint(on_lon, on_lat) as gap_end_point,
+  -- Final gaps model indicating which gaps are likely disabling events
+  (
+    positions_per_day_off > 10
+    AND positions_12_hours_before_sat >= 14
+  ) as is_real_gap,
+  gap_hours/24 > 14 over_two_weeks
+ -- for spatial allocation, require start to be more than 50 nautical miles
+ -- to avoid counting gaps that are in port
+ FROM `{{ destination_dataset }}.{{ gap_events_features_table }}`
+ WHERE gap_hours >= 12
+  AND off_distance_from_shore_m > 1852*50
+  AND (
+    DATE(gap_start) >= '{{ start_date }}'
+    AND DATE(gap_end) <= '{{ end_date }}'
+  )
+ ),
+--
+-- Fishing vessels list
+--
+vessel_info AS (
+  SELECT
+    ssvid,
+    year,
+    vessel_class,
+    best_flag as flag
+  FROM `{{ destination_dataset}}.{{ fishing_vessels_table }}`
 ),
-
-gap_raster_norm as (
-  select
-    x, y, hours, vessel_class, hours_diff, distance_km, days_to_start
-  from
-    proj_ais_gaps_catena.raster_gaps_norm_v20211021
+--
+-- Normalized gaps raster
+--
+gap_raster_norm AS (
+  SELECT
+    x,
+    y,
+    hours,
+    vessel_class,
+    hours_diff,
+    distance_km,
+    days_to_start
+  FROM
+    `{{ destination_dataset }}.{{ raster_gaps_norm_table }}`
 ),
-
-
-
-with_mappings as (
-
-select *,
-map_distance(gap_distance_km) distance_km,
-map_hours_diff(gap_hours) hours_diff
-from gap_table
-join
-vessel_info
-using(ssvid,year)),
-
-with_mappings_center_course as
-(select *,
-90 - get_course_frommidpoint(gap_start_point, gap_end_point) theta,
-get_midpoint(gap_start_point, gap_end_point) midpoint,
-gap_hours / hours_diff as hours_adj,
-gap_distance_km / distance_km as dist_adj
-from with_mappings ),
-
-joined_with_raster as (
-
-select
-10*(x*cos(radians(theta)) - y*sin(radians(theta)))*dist_adj km_east, -- 10 because each grid cell is 10km
-10*(x*sin(radians(theta)) + y*cos(radians(theta)))*dist_adj km_north,
-st_y(midpoint) lat_center,
-st_x(midpoint) lon_center,
-hours*hours_adj as hours,
-gap_hours,
-vessel_class,
-flag,
-is_real_gap
-from gap_raster_norm
-join
-with_mappings_center_course
-using(vessel_class, hours_diff, distance_km)
+--
+--
+--
+with_mappings AS (
+  SELECT
+    *,
+    map_distance(gap_distance_km) distance_km,
+    map_hours_diff(gap_hours) hours_diff
+  FROM gap_table
+  JOIN vessel_info
+  USING(ssvid, year)
 ),
-
-
-with_rotated_lat_lon as (
-select *,
-lat_center + km_north/deglat2km() lat,
-lon_center + km_east/(deglat2km()*cos(radians(lat_center))) lon
-from joined_with_raster
+--
+--
+--
+with_mappings_center_course AS (
+  SELECT
+    *,
+    90 - get_course_frommidpoint(gap_start_point, gap_end_point) as theta,
+    get_midpoint(gap_start_point, gap_end_point) as midpoint,
+    gap_hours / hours_diff as hours_adj,
+    gap_distance_km / distance_km as dist_adj
+  FROM with_mappings
 ),
-
+--
+--
+--
+joined_with_raster AS (
+  SELECT
+    -- 10 because each grid cell is 10km
+    10*(x*cos(radians(theta)) - y*sin(radians(theta)))*dist_adj as km_east,
+    10*(x*sin(radians(theta)) + y*cos(radians(theta)))*dist_adj as km_north,
+    st_y(midpoint) as lat_center,
+    st_x(midpoint) as lon_center,
+    hours*hours_adj as hours,
+    gap_hours,
+    vessel_class,
+    flag,
+    is_real_gap
+  FROM gap_raster_norm
+  JOIN with_mappings_center_course
+  USING(vessel_class, hours_diff, distance_km)
+),
+--
+-- Rotate coordinates
+--
+with_rotated_lat_lon AS (
+  SELECT
+    *,
+    lat_center + km_north/deglat2km() as lat,
+    lon_center + km_east/(deglat2km()*cos(radians(lat_center))) as lon
+  FROM joined_with_raster
+),
+--
+--
+--
 with_distance_to_shore as (
-
-select * except(lat, lon), a.lat lat, a.lon lon
-from
-with_rotated_lat_lon a
-left join
-`pipe_static.distance_from_shore` b
-    ON
-      CAST( (a.lat*100) AS int64) = CAST( (b.lat*100) AS int64)
-      AND CAST((a.lon*100) AS int64) =CAST(b.lon*100 AS int64)
-
+  SELECT
+    * except(lat, lon),
+    a.lat as lat,
+    a.lon as lon
+  FROM with_rotated_lat_lon a
+  LEFT JOIN `pipe_static.distance_from_shore` b
+  ON
+    CAST( (a.lat*100) AS int64) = CAST( (b.lat*100) AS int64)
+    AND CAST((a.lon*100) AS int64) =CAST(b.lon*100 AS int64)
 )
-
-select
-vessel_class,
-is_real_gap,
-flag,
-gap_hours > 7*24 over_one_week,
-gap_hours > 14*24 over_two_weeks,
-gap_hours > 7*24*4 over_four_weeks,
-distance_from_shore_m >= 50*1852 as over_50_nm,
-distance_from_shore_m >= 200*1852 as over_200_nm,
-floor(lat*{{ scale }}) lat_index,
-floor(lon*{{ scale }}) lon_index,
-sum(hours) gap_hours
-from
-with_distance_to_shore
-group by lat_index, lon_index,
-vessel_class, over_50_nm, over_200_nm,
-over_one_week, over_four_weeks, over_two_weeks, flag,
-is_real_gap
+--
+-- Return table of gaps allocated via raster approach
+--
+SELECT
+  vessel_class,
+  is_real_gap,
+  flag,
+  gap_hours > 7*24 as over_one_week,
+  gap_hours > 14*24 as over_two_weeks,
+  gap_hours > 7*24*4 as over_four_weeks,
+  distance_from_shore_m >= 50*1852 as over_50_nm,
+  distance_from_shore_m >= 200*1852 as over_200_nm,
+  floor(lat*{{ scale }}) as lat_index,
+  floor(lon*{{ scale }}) as lon_index,
+  sum(hours) as gap_hours
+FROM with_distance_to_shore
+GROUP BY
+  lat_index,
+  lon_index,
+  vessel_class,
+  over_50_nm,
+  over_200_nm,
+  over_one_week,
+  over_four_weeks,
+  over_two_weeks,
+  flag,
+  is_real_gap
