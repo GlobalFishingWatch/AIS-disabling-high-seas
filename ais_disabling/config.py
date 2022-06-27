@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, date
 ###############################################
 
 # Test run queries?
-test_run = True
+test_run = False
 
 # BQ datasets/tables
 gfw_research = 'gfw_research'
@@ -56,12 +56,17 @@ reception_dates = pd.date_range(start_date, end_date, freq='1M') - pd.offsets.Mo
 # Suspected disabling event filters
 ###############################################
 
+min_gap_hours = 12
+min_distance_from_shore_m = 50
+min_positions_per_day = 10
+min_positions_before = 14
+
 gap_filters = f"""
-WHERE gap_hours >= 12
+WHERE gap_hours >= {min_gap_hours}
 AND (DATE(gap_start) >= '{tp[0]}' AND DATE(gap_end) <= '{tp[-1]}')
-AND off_distance_from_shore_m > 1852*50
-AND positions_per_day_off > 10
-AND positions_12_hours_before_sat >= 14
+AND off_distance_from_shore_m > 1852*{min_distance_from_shore_m}
+AND positions_per_day_off > {min_positions_per_day}
+AND positions_12_hours_before_sat >= {min_positions_before}
 """
 
 ###############################################
