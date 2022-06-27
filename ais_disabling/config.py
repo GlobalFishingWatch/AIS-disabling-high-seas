@@ -34,6 +34,10 @@ end_date = date(2019,12, 31)
 # Min gap hours in raw gaps table
 min_gap_hours = 6
 
+# "True Gaps" model parameters
+lowest_rec = 10
+ping_thresh = 14
+
 ###############################################
 # Dates to run
 ###############################################
@@ -101,6 +105,8 @@ raster_gaps_norm_table = f'raster_gaps_norm_{output_version}'
 gaps_allocated_raster_table = f'gaps_allocated_raster_{output_version}'
 gaps_allocated_interpolate_table = f'gaps_allocated_interpolate_{output_version}'
 fishing_allocated_table = f'fishing_activity_{output_version}'
+pipe_static_distance_from_shore = 'pipe_static.distance_from_shore'
+gap_positions_hourly = f'gap_positions_hourly_{output_version}'
 
 ###############################################
 # Coordinate defaults for plotting functions

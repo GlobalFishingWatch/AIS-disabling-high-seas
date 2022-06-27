@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import argparse
 import json
 import pandas as pd
@@ -111,7 +109,6 @@ if __name__ == "__main__":
         run_double = False
 
     models_folder = get_models_folder(lowest_rec)
-    # models_folder = f"models/models_{lowest_rec}ppd_save"
     images_folder = get_figures_folder(lowest_rec)
     
     print(f"Creating publication images for lowest_rec={lowest_rec}:\n\tfrom models in {models_folder}\n\tto this folder {images_folder}")

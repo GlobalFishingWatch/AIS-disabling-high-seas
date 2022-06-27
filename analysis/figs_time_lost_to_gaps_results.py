@@ -21,7 +21,7 @@ warnings.filterwarnings("ignore")
 def gbq(q):
     return pd.read_gbq(q, project_id='world-fishing-827')
 
-figures_folder = 'analysis/figures/'
+figures_folder = 'figures'
 
 if not os.path.exists(figures_folder):
     os.makedirs(figures_folder)
