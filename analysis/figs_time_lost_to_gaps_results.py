@@ -177,29 +177,30 @@ def map_bivariate(grid_total, grid_ratio, gs=None, title=None, label=None, numbe
                 
         return ax
 
-def fraction_disabling_all(total_activity_interp_2w, frac_time_lost_interp_2w, reception, images_folder=None):
+def fraction_disabling_all(total_activity_interp_2w, frac_time_lost_interp_2w, reception, figures_folder=None):
     # Both the grid of total activity and the grid of the fraction of time lost to gaps are masked by reception to exclude areas of reception <= 5. Due to the bivariate nature of the figure, vessel activity in these areas of low reception implies that there is a lot of vessel activity and no intentional disabling gaps. In reality, we simply can't say anything about the gaps in that area. Therefore, we exclude these areas from the figure using the average reception for A class devices. Future work could include more sophisticated reception filtering that matches the gaps model where vessel activity is excluded by the reception for it's vessel type during that particular month.
     fig = plt.figure()
     # Bivariate using interpolation
     grid_total = total_activity_interp_2w.copy() * reception.copy()
     grid_ratio = frac_time_lost_interp_2w.copy() * reception.copy()
-    # title = 'Fraction of Fishing Vessel Activity Lost to AIS Disabling'
 
     # Create bounding boxes to add to map
     # ARG: -65,-55,-50,-35
     bbox_ARG = (-65, -55, -50, -35)
-    # NW pacific: 143,175,38,52
+    # NW pacific
     bbox_NWP = (143, 175, 38, 52)
-    # West Africa: -23,15,-8,23
+    # West Africa
     bbox_WA = (-23, 15, -8, 23)
-    bboxes = [bbox_ARG, bbox_NWP, bbox_WA]
+    # NW Pacific 2
+    bbox_NWP2 = (-180, -150, 50, 70)
+    bboxes = [bbox_ARG, bbox_NWP, bbox_WA, bbox_NWP2]
             
     ax = map_bivariate(grid_total, grid_ratio, a_vmin=A_VMIN, a_vmax=A_VMAX, bboxes=bboxes, add_cbar=True, land_scale=LAND_SCALE)
-    if images_folder:
-        plt.savefig(f"{images_folder}/fig1_fraction_disabling_all.png", dpi=300, bbox_inches = 'tight')
+    if figures_folder:
+        plt.savefig(f"{figures_folder}/fig1_fraction_disabling_all_2w.png", dpi=300, bbox_inches = 'tight')
     return fig
 
-def fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_under_12_hours, df_activity_under_12_hours_byflag, reception, images_folder=None):
+def fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_under_12_hours, df_activity_under_12_hours_byflag, reception, figures_folder=None):
     fig = plt.figure(figsize=(15, 15))
     gs = fig.add_gridspec(4,2, wspace=0.0, hspace=0.1)
 
@@ -230,7 +231,7 @@ def fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_un
                                 origin="lower",
                             )
 
-        activity_under_12_hours_2w = psm.rasters.df2raster(
+        activity_under_12_hours = psm.rasters.df2raster(
                                             df_activity_under_12_hours[df_activity_under_12_hours.vessel_class == vessel_class],
                                             "lon_index",
                                             "lat_index",
@@ -240,7 +241,7 @@ def fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_un
                                             origin="lower",
                                         )
         
-        total_activity_2w = (all_gaps_activity_2w + activity_under_12_hours_2w)
+        total_activity_2w = (all_gaps_activity_2w + activity_under_12_hours)
         
         grid_total = total_activity_2w.copy() * reception.copy()
         grid_ratio = (disabling_gaps_activity_2w / total_activity_2w) * reception.copy()
@@ -251,9 +252,9 @@ def fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_un
         
     # BY FLAG
     flags = [('B', 'ESP', 'Spain'),
-            ('D', 'TWN', 'Chinese Taipei'),
-            ('F', 'CHN', 'China'),
-            ('H', 'KOR', 'South Korea'),
+            ('D', 'USA', 'United States'),
+            ('F', 'TWN', 'Chinese Taipei'),
+            ('H', 'CHN', 'China'),
             ]
     for i, (number, flag, flag_label) in enumerate(flags):
         disabling_gaps_activity_2w = psm.rasters.df2raster(
@@ -276,7 +277,7 @@ def fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_un
                             origin="lower",
                         )
 
-        activity_under_12_hours_2w = psm.rasters.df2raster(
+        activity_under_12_hours = psm.rasters.df2raster(
                             df_activity_under_12_hours_byflag[df_activity_under_12_hours_byflag.flag == flag],
                             "lon_index",
                             "lat_index",
@@ -286,7 +287,7 @@ def fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_un
                             origin="lower",
                         )
 
-        total_activity_2w = (all_gaps_activity_2w + activity_under_12_hours_2w)
+        total_activity_2w = (all_gaps_activity_2w + activity_under_12_hours)
         
         grid_total = total_activity_2w.copy() * reception.copy()
         grid_ratio = (disabling_gaps_activity_2w / total_activity_2w) * reception.copy()
@@ -327,11 +328,11 @@ def fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_un
         cb_ax.set_xlabel("Fraction of activity obscured\nby suspected disabling", labelpad=10)
         cb_ax.set_ylabel("Estimated total\nfishing vessel\nactivity\n(hours per km$^{2}$)", labelpad=10)
 
-    if images_folder:
-        plt.savefig(f"{images_folder}/fig2_fraction_disabling_geartype_flag.png", dpi=300, bbox_inches = 'tight')
+    if figures_folder:
+        plt.savefig(f"{figures_folder}/fig2_fraction_disabling_geartype_flag_2w.png", dpi=300, bbox_inches = 'tight')
     return fig
 
-def spatial_allocation_comparison(total_activity_interp_2w, frac_time_lost_interp_2w, total_activity_interp, frac_time_lost_interp, total_activity_raster_2w, frac_time_lost_raster_2w, total_activity_raster, frac_time_lost_raster, reception, images_folder=None):
+def spatial_allocation_comparison(total_activity_interp_2w, frac_time_lost_interp_2w, total_activity_interp, frac_time_lost_interp, total_activity_raster_2w, frac_time_lost_raster_2w, total_activity_raster, frac_time_lost_raster, reception, figures_folder=None):
     # Time disabled at Sea for Disabling Events < 2 Weeks and All Time Using Two Different Methods of Spatially Allocating Disabling Events. 
     fig = plt.figure(figsize=(15, 8), dpi=300)
     gs = fig.add_gridspec(2,2, wspace=0.1, hspace=0.1)
@@ -394,11 +395,13 @@ def spatial_allocation_comparison(total_activity_interp_2w, frac_time_lost_inter
         cb_ax.set_xlabel("Fraction of activity obscured\nby suspected disabling", labelpad=10)
         cb_ax.set_ylabel("Estimated total\nfishing vessel\nactivity\n(hours per km$^{2}$)", labelpad=10)
 
-    if images_folder:
-        plt.savefig(f"{images_folder}/S18_comparing_raster_interpolation.png", dpi=300, bbox_inches = 'tight')
+    if figures_folder:
+        plt.savefig(f"{figures_folder}/S18_comparing_raster_interpolation.png", dpi=300, bbox_inches = 'tight')
     return fig
 
-def time_lost_to_gaps_results_figures(images_folder):
+
+
+def time_lost_to_gaps_results_figures(figures_folder):
     # Generate raster data for figures
     ### Overall and by Class
     #### Gaps allocated based on interpolation
@@ -414,7 +417,7 @@ def time_lost_to_gaps_results_figures(images_folder):
     from 
     {TABLE_GAPS_INTERP}
     where 
-    over_50nm 
+    over_50_nm 
     group by lat_index, lon_index, vessel_class
     '''
     df_interp = gbq(q)
@@ -468,7 +471,7 @@ def time_lost_to_gaps_results_figures(images_folder):
     from 
     {TABLE_GAPS_INTERP}
     where 
-    over_50nm 
+    over_50_nm 
     group by lat_index, lon_index, flag
     '''
     df_interp_byflag = gbq(q)
@@ -535,7 +538,7 @@ def time_lost_to_gaps_results_figures(images_folder):
     frac_time_lost_interp = disabling_gap_activity_interp / total_activity_interp
 
     total_activity_interp_2w = (all_gap_activity_interp_2w + activity_under_12_hours)
-    frac_time_lost_interp_2w = disabling_gap_activity_interp_2w / total_activity_interp
+    frac_time_lost_interp_2w = disabling_gap_activity_interp_2w / total_activity_interp_2w
 
     # Using the raster method
     disabling_gap_activity_raster = psm.rasters.df2raster(df_raster,
@@ -575,11 +578,11 @@ def time_lost_to_gaps_results_figures(images_folder):
     reception[reception>5] = 1
 
     # GENERATE FIGURES
-    fraction_disabling_all(total_activity_interp_2w, frac_time_lost_interp_2w, reception, images_folder=images_folder)
-    fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_under_12_hours, df_activity_under_12_hours_byflag, reception, images_folder=images_folder)
-    spatial_allocation_comparison(total_activity_interp_2w, frac_time_lost_interp_2w, total_activity_interp, frac_time_lost_interp, total_activity_raster_2w, frac_time_lost_raster_2w, total_activity_raster, frac_time_lost_raster, reception, images_folder=images_folder)
+    fraction_disabling_all(total_activity_interp_2w, frac_time_lost_interp_2w, reception, figures_folder=figures_folder)
+    fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_under_12_hours, df_activity_under_12_hours_byflag, reception, figures_folder=figures_folder)
+    spatial_allocation_comparison(total_activity_interp_2w, frac_time_lost_interp_2w, total_activity_interp, frac_time_lost_interp, total_activity_raster_2w, frac_time_lost_raster_2w, total_activity_raster, frac_time_lost_raster, reception, figures_folder=figures_folder)
 
 
 if __name__ == "__main__":
-    images_folder = get_figures_folder(None)
-    time_lost_to_gaps_results_figures(images_folder)
+    figures_folder = get_figures_folder(None)
+    time_lost_to_gaps_results_figures(figures_folder)
