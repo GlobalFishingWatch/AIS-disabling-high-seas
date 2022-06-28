@@ -16,6 +16,7 @@ import pyseas.maps
 import pyseas.maps.rasters
 import pyseas.styles
 import pyseas.cm
+import cmocean
 
 from google.cloud import bigquery
 
@@ -298,9 +299,12 @@ def make_gridded_fishing_brt_table(gridded_fishing_table,
 #
 # ###################################
 
-def make_hourly_interpolation_table(destination_table,
-                                    destination_dataset,
-                                    date):
+def make_hourly_interpolation_table(
+    pipeline_dataset,
+    pipeline_table,
+    destination_table,
+    destination_dataset,
+    date):
 
     # Update partition of destination table
     destination_table = destination_table + "\$" + date.replace('-','')
@@ -309,35 +313,14 @@ def make_hourly_interpolation_table(destination_table,
     YYYY_MM_DD = date[:4] + "-" + date[4:6] + "-" + date[6:8]
 
     # Format command
-    cmd = '''jinja2 interpolation/hourly_interpolation_byseg.sql.j2    \
-       -D YYYY_MM_DD="{YYYY_MM_DD}" \
+    cmd = f'''jinja2 data_production/interpolation/hourly_interpolation_byseg.sql.j2    \
+       -D YYYY_MM_DD="{date}" \
+       -D pipeline_dataset="{pipeline_dataset}" \
+       -D pipeline_table="{pipeline_table}" \
        | \
         bq query --replace \
         --destination_table={destination_dataset}.{destination_table}\
-         --allow_large_results --use_legacy_sql=false '''.format(YYYY_MM_DD = date,
-                                                                 destination_dataset=destination_dataset,
-                                                                 destination_table=destination_table)
-    return cmd
-
-def make_hourly_fishing_interpolation_table(destination_table,
-                                            destination_dataset,
-                                            date):
-
-    # Update partition of destination table
-    destination_table = destination_table + "\$" + date.replace('-','')
-
-    # Set date as YYYY-MM-DD format
-    YYYY_MM_DD = date[:4] + "-" + date[4:6] + "-" + date[6:8]
-
-    # Format command
-    cmd = '''jinja2 interpolation/hourly_fishing_interpolation_byseg.sql.j2    \
-       -D YYYY_MM_DD="{YYYY_MM_DD}" \
-       | \
-        bq query --replace \
-        --destination_table={destination_dataset}.{destination_table}\
-         --allow_large_results --use_legacy_sql=false '''.format(YYYY_MM_DD = date,
-                                                                 destination_dataset=destination_dataset,
-                                                                 destination_table=destination_table)
+         --allow_large_results --use_legacy_sql=false '''
     return cmd
 
 def make_hourly_gap_interpolation_table(destination_table,
@@ -607,8 +590,9 @@ def make_smooth_reception_table(start_date,
                                                  dest_table_partition))
 
 # Plot reception quality
-def plot_reception_quality(reception_start_date,
-                           reception_df,
+def plot_reception_quality(reception_df,
+                           contours = True,
+                           mode = 'smooth',
                            fig_min_value = 1,
                            fig_max_value = 400
                           ):
@@ -636,17 +620,18 @@ def plot_reception_quality(reception_start_date,
 
     titles = ["Class A", "Class B"]
 
-#     titles = ["Class A {}".format(reception_start_date.date()),
-#               "Class B {}".format(reception_start_date.date())]
-
     with pyseas.context(pyseas.styles.light):
 
         axes = []
         ims = []
 
         # Class A
-        grid = np.maximum(class_a_reception, 1)
-        grid[grid<fig_min_value/fig_max_value]=100
+        if mode == 'smooth':
+            grid = np.maximum(class_a_reception, 1)
+        else:
+            grid = class_a_reception
+
+        grid[grid<fig_min_value/fig_max_value]=np.nan
         norm = colors.LogNorm(vmin=fig_min_value, vmax=fig_max_value)
 
         ax, im = pyseas.maps.plot_raster(grid,
@@ -655,12 +640,30 @@ def plot_reception_quality(reception_start_date,
                                          origin = 'upper',
                                          norm = norm)
 
+        if contours:
+            contours = ax.contour(grid,
+                origin = 'upper',
+                levels = list([10,25,50,100]),
+                extent = (-180,180,-90,90),
+                zorder = 1,
+                colors = 'black',
+                linestyles = ('solid','dotted','dotted','dotted'),
+                norm = norm,
+                transform = pyseas.maps.identity
+                )
+
+            ax.clabel(contours, zorder = 1, inline=True, fontsize=8)
+
         ax.set_title(titles[0])
         ax.text(-150*1000*100,80*1000*100, "A.")
 
         # Class B
-        grid = np.maximum(class_b_reception, 1)
-        grid[grid<fig_min_value/fig_max_value]=100
+        if mode == 'smooth':
+            grid = np.maximum(class_b_reception, 1)
+        else:
+            grid = class_b_reception
+
+        grid[grid<fig_min_value/fig_max_value]=np.nan
         norm = colors.LogNorm(vmin=fig_min_value, vmax=fig_max_value)
 
         ax, im = pyseas.maps.plot_raster(grid,
@@ -669,6 +672,20 @@ def plot_reception_quality(reception_start_date,
                                          origin = 'upper',
                                          norm = norm
                                         )
+
+        if contours:
+            contours = ax.contour(grid,
+                origin = 'upper',
+                levels = list([10,25,50,100]),
+                extent = (-180,180,-90,90),
+                zorder = 1,
+                colors = 'black',
+                linestyles = ('solid','dotted','dotted','dotted'),
+                norm = norm,
+                transform = pyseas.maps.identity
+                )
+
+            ax.clabel(contours, zorder = 1, inline=True, fontsize=8)
 
         ax.set_title(titles[1])
         ax.text(-150*1000*100,80*1000*100, "B.")
@@ -682,3 +699,107 @@ def plot_reception_quality(reception_start_date,
 
         cbar.set_label("Satellite positions per day")
         plt.tight_layout(pad=0.5)
+
+def plot_reception_residuals(df):
+    # Remove NA coordinate rows
+    sat_residuals = df.dropna(subset=['lat_bin','lon_bin'])
+
+    # Pull out class A and B capped residuals
+    class_a_cap_residuals = pyseas.maps.rasters.df2raster(sat_residuals[sat_residuals['class'] == 'A'],
+                                                      'lon_bin', 'lat_bin','residual_cap',
+                                                      xyscale=1,
+                                                      per_km2=False)
+
+    class_b_cap_residuals = pyseas.maps.rasters.df2raster(sat_residuals[sat_residuals['class'] == 'B'],
+                                                      'lon_bin', 'lat_bin','residual_cap',
+                                                      xyscale=1,
+                                                      per_km2=False)
+
+    # Plot
+    fig = plt.figure(figsize=(10,10))
+
+    titles = ["Class A",
+              "Class B"]
+
+    with pyseas.context(pyseas.styles.light):
+
+        axes = []
+        ims = []
+        fig_a_min_value = -50
+        fig_a_max_value = 50
+
+        # Class A
+        grid = class_a_cap_residuals
+        norm = colors.Normalize(vmin=fig_a_min_value, vmax=fig_a_max_value)
+
+        ax, im = pyseas.maps.plot_raster(grid,
+                                         subplot=(2,1,1),
+                                         cmap = cmocean.cm.balance,
+                                         origin = 'upper',
+                                         norm = norm
+                                        )
+
+        ax.set_title("Class A")
+        ax.text(-150*1000*100,80*1000*100, "A.")
+
+        cbar = fig.colorbar(im, ax=ax,
+                          orientation='horizontal',
+                          fraction=0.02,
+                          aspect=60,
+                          pad=0.02,
+                         )
+
+        cbar.set_label(f"Average residual capped positions per vessel day")
+
+        # Class B
+        fig_b_min_value = -100
+        fig_b_max_value = 100
+
+        grid = class_b_cap_residuals
+        norm = colors.Normalize(vmin=fig_b_min_value, vmax=fig_b_max_value)
+
+        ax, im = pyseas.maps.plot_raster(grid,
+                                         subplot=(2,1,2),
+                                         cmap = cmocean.cm.balance,
+                                         origin = 'upper',
+                                         norm = norm
+                                        )
+
+        ax.set_title("Class B")
+        ax.text(-150*1000*100,80*1000*100, "B.")
+
+        cbar = fig.colorbar(im, ax=ax,
+                          orientation='horizontal',
+                          fraction=0.02,
+                          aspect=60,
+                          pad=0.02,
+                         )
+
+        cbar.set_label(f"Average residual capped positions per vessel day")
+
+        plt.tight_layout(pad=0.5)
+
+def plot_residual_histogram(sat_residuals):
+    class_a_residuals = pyseas.maps.rasters.df2raster(sat_residuals[sat_residuals['class'] == 'A'],
+                                                      'lon_bin', 'lat_bin','residual',
+                                                      xyscale=1,
+                                                      per_km2=False)
+
+    class_b_residuals = pyseas.maps.rasters.df2raster(sat_residuals[sat_residuals['class'] == 'B'],
+                                                      'lon_bin', 'lat_bin','residual',
+                                                      xyscale=1,
+                                                      per_km2=False)
+
+    # set axes range
+    ax_range = 100
+    bins = 50
+
+    fig, (ax1, ax2) = plt.subplots(1,2, sharey=True, sharex=False)
+    fig.suptitle('Observed - predicted positions per vessel day')
+
+    ax1.hist(class_a_residuals.flatten(), range=(-ax_range, ax_range), bins=bins)
+    ax1.title.set_text('Class A')
+    ax1.set(ylabel = 'Count')
+
+    ax2.hist(class_b_residuals.flatten(), range=(-ax_range, ax_range), bins=bins)
+    ax2.title.set_text('Class B')

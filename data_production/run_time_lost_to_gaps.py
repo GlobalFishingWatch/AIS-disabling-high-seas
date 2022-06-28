@@ -23,7 +23,7 @@ gap_positions_hourly_table = config.gap_positions_hourly_table
 raster_gaps_table = config.raster_gaps_table
 
 # Which steps to run
-steps_to_run = ['normalize_gaps']
+steps_to_run = ['allocate_gaps_interpolate']
 
 #########################################################################
 # 1. Interpolate positions during AIS gap events
@@ -59,6 +59,45 @@ if 'gap_interpolation' in steps_to_run:
 
         # Run commands
         utils.execute_commands_in_parallel(gap_int_cmds)
+
+#########################################################################
+# 1. Interpolate AIS positions
+#########################################################################
+
+if 'ais_interpolation' in steps_to_run:
+    print("Running AIS interpolation")
+    # Store commands
+    ais_int_cmds = []
+    for t in config.tp:
+        cmd = utils.make_hourly_interpolation_table(
+            date = t,
+            pipeline_dataset = config.pipeline_dataset,
+            pipeline_table = config.pipeline_table,
+            destination_dataset = config.destination_dataset,
+            destination_table = config.ais_positions_hourly
+            )
+
+        ais_int_cmds.append(cmd)
+
+    # test query
+    if config.test_run:
+        test_cmd = ais_int_cmds[0].split('|')[0]
+        print(test_cmd)
+        os.system(test_cmd)
+
+    if config.test_run is False:
+        # Create tables if necessary
+        try:
+            utils.client.get_table(f"{config.destination_dataset}.{config.ais_positions_hourly}")
+            print(f"Table {config.destination_dataset}.{config.ais_positions_hourly} already exists")
+        except NotFound:
+            print(f"Table {config.destination_dataset}.{config.ais_positions_hourly} is not found.")
+            print(f"Creating table {config.destination_dataset}.{config.ais_positions_hourly}")
+            # create interpolated gap event positions table if needed
+            utils.make_bq_partitioned_table(config.destination_dataset, config.ais_positions_hourly)
+
+        # Run commands
+        utils.execute_commands_in_parallel(ais_int_cmds)
 
 #########################################################################
 # 2. Rasterize gaps
