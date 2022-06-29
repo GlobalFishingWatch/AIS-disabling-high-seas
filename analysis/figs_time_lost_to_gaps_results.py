@@ -184,6 +184,18 @@ def fraction_disabling_all(total_activity_interp_2w, frac_time_lost_interp_2w, r
     grid_total = total_activity_interp_2w.copy() * reception.copy()
     grid_ratio = frac_time_lost_interp_2w.copy() * reception.copy()
 
+    # Output data for reference
+    df_output = pd.DataFrame(columns=["lat", "lon", "frac_disabling", "total_activity"])
+    for lat in range(-90,90):
+        for lon in range(-180, 180):
+            new_row = {'lat': lat, 'lon': lon, 
+                    'frac_disabling': grid_ratio[lat][lon],
+                    'total_activity': grid_total[lat][lon]
+            }
+            df_output = df_output.append(new_row, ignore_index=True)
+    if figures_folder:
+        df_output.to_csv(f"{figures_folder}/fig1_data.csv")
+
     # Create bounding boxes to add to map
     # ARG: -65,-55,-50,-35
     bbox_ARG = (-65, -55, -50, -35)
@@ -539,6 +551,7 @@ def time_lost_to_gaps_results_figures(figures_folder):
 
     total_activity_interp_2w = (all_gap_activity_interp_2w + activity_under_12_hours)
     frac_time_lost_interp_2w = disabling_gap_activity_interp_2w / total_activity_interp_2w
+
 
     # Using the raster method
     disabling_gap_activity_raster = psm.rasters.df2raster(df_raster,
