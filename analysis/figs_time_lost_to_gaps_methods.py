@@ -82,7 +82,7 @@ def plot_probability_raster(df_raster, days, distance_km, vmin=.001, vmax=1,
             [5,5,0,0]]
 
     fig, axs = pplt.subplots(array, figwidth=9*.56, figheight=17.5*.75*3/5,
-                             aspect=1, top=5, bottom=5)
+                             aspect=1, top=8, bottom=8)
 #     max_dist = distance_km*4
 
     def fill_grid(row):
@@ -105,18 +105,18 @@ def plot_probability_raster(df_raster, days, distance_km, vmin=.001, vmax=1,
         d = df_raster[df_raster.vessel_class==vessel_class]
         d.apply(fill_grid, axis=1)
         cbar = axs[i].imshow(grid, interpolation=None,extent=[-max_dist,max_dist,-max_dist,max_dist], vmin=0, vmax=vmax)
-        axs[i].set_title(f"{title}")
+        axs[i].set_title(f"{title}", fontsize=14)
 
 
     axs.format(
         abc=False, titleloc='l',
         xlabel='km', ylabel='km', 
         suptitle=f'{distance_km} km, {days} days',
-        suptitlepad=-0.1
+        rc_kw={'suptitle.pad': -0.1, 'suptitle.size': 16}
     )
     fig.colorbar(cbar, loc='b', label='hours')
     
-    axs[0].text(-0.2, 1.2, fig_label, ha='left', va='top', transform=axs[0].transAxes, fontweight='bold')
+    axs[0].text(-0.2, 1.2, fig_label, ha='left', va='top', transform=axs[0].transAxes, fontweight='bold', fontsize=16)
     
     if figures_folder:
         plt.savefig(f"{figures_folder_precursors}/S15_probability_raster_{distance_km}km_{days}days.png", dpi=300, bbox_inches = 'tight')
@@ -367,6 +367,6 @@ def close_to_line(figures_folder=None):
 
 if __name__ == "__main__":
     figures_folder = get_figures_folder(None)
-    # probability_rasters(figures_folder)
+    probability_rasters(figures_folder)
     spatially_allocated_gaps(figures_folder)
     close_to_line(figures_folder)
