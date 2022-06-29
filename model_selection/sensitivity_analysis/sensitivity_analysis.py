@@ -9,7 +9,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.11.2
 #   kernelspec:
-#     display_name: Python 3.8.2 ('gfw-viz')
+#     display_name: Python 3.9.6 ('rad')
 #     language: python
 #     name: python3
 # ---
@@ -28,6 +28,7 @@ from ais_disabling.config import proj_dataset, gap_events_features_table
 GAPS_FEATURES = f"{proj_dataset}.{gap_events_features_table}"
 
 models_folder = "./model_selection/models"
+figures_folder = "./analysis/figures"
 
 
 
@@ -163,6 +164,7 @@ plt.gca().set_facecolor("white")
 plt.legend()
 plt.xlabel("Lower reception bound (ppd)")
 plt.ylabel("Optimal F0.5")
+plt.savefig(f"{figures_folder}/sensitvity_analysis.png")
 plt.show()
 
 
