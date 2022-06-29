@@ -31,13 +31,6 @@ create_tables = True
 start_date = date(2017,1, 1)
 end_date = date(2019,12, 31)
 
-# Min gap hours in raw gaps table
-min_gap_hours = 6
-
-# "True Gaps" model parameters
-lowest_rec = 10
-ping_thresh = 14
-
 ###############################################
 # Dates to run
 ###############################################

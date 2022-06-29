@@ -30,18 +30,18 @@ if not os.path.exists(figures_folder_precursors):
     os.makedirs(figures_folder_precursors)
 
 from ais_disabling.config import (
-    lowest_rec,
-    ping_thresh,
+    gap_filters,
+    min_positions_per_day,
+    min_positions_before,
+    min_gap_hours,
+    min_distance_from_shore_m,
+    tp,
     proj_dataset,
     gap_events_features_table, 
     fishing_vessels_table,
     raster_gaps_norm_table,
     pipe_static_distance_from_shore,
     gap_positions_hourly,
-    gaps_allocated_interpolate_table,
-    gaps_allocated_raster_table,
-    fishing_allocated_table,
-    sat_reception_smoothed,
 )
 
 TABLE_GAPS_FEATURES = f"{proj_dataset}.{gap_events_features_table}"
@@ -49,8 +49,10 @@ TABLE_FISHING_VESSELS = f"{proj_dataset}.{fishing_vessels_table}"
 TABLE_RASTER_GAPS_NORM = f"{proj_dataset}.{raster_gaps_norm_table}"
 TABLE_DISTANCE_FROM_SHORE = pipe_static_distance_from_shore
 TABLE_GAPS_POSITIONS_HOURLY = f"{proj_dataset}.{gap_positions_hourly}"
-# TABLE_GAPS_INTERP = f"{proj_dataset}.{gaps_allocated_interpolate_table}"
-# TABLE_GAPS_RASTER = f"{proj_dataset}.{gaps_allocated_raster_table}"
+
+# Query settings
+START_DATE = tp[0]
+END_DATE = tp[-1]
 
 # Map Settings
 SCALE = 1
@@ -195,8 +197,12 @@ def get_gap_rasters(gap_id):
     TABLE_DISTANCE_FROM_SHORE = TABLE_DISTANCE_FROM_SHORE,
     SCALE = SCALE,
     GAP_ID = gap_id,
-    LOWEST_REC = lowest_rec,
-    PING_THRESH = ping_thresh,
+    MIN_POSITIONS_PER_DAY = min_positions_per_day,
+    MIN_POSITIONS_BEFORE = min_positions_before,
+    MIN_GAP_HOURS = min_gap_hours,
+    MIN_DISTANCE_FROM_SHORE_M = min_distance_from_shore_m,
+    START_DATE = START_DATE,
+    END_DATE = END_DATE,
   )
 
   with open(f"{queries_folder}/time_lost_to_gaps_interpolate.sql.j2") as f:
@@ -209,8 +215,10 @@ def get_gap_rasters(gap_id):
     TABLE_DISTANCE_FROM_SHORE = TABLE_DISTANCE_FROM_SHORE,
     SCALE = SCALE,
     GAP_ID = gap_id,
-    LOWEST_REC = lowest_rec,
-    PING_THRESH = ping_thresh,
+    GAP_FILTERS = gap_filters,
+    MIN_GAP_HOURS = min_gap_hours,
+    START_DATE = START_DATE,
+    END_DATE = END_DATE,
   )
 
   q_gap_char = f'''
@@ -316,15 +324,19 @@ def spatially_allocated_gaps(figures_folder=None):
 # If we interpolate a line between the start and end of a gap, how much of the activity using the raster method will be within 1 degree -- or 111 km -- of this line?
 
 def close_to_line(figures_folder=None):
-  with open(f"{queries_folder}/time_lost_to_gaps_close_to_line.sql.j2") as f:
+  with open(f"{queries_folder}/close_to_line.sql.j2") as f:
       sql_template = Template(f.read())
 
   q_close_to_line = sql_template.render(
     TABLE_GAPS_FEATURES = TABLE_GAPS_FEATURES,
     TABLE_FISHING_VESSELS = TABLE_FISHING_VESSELS,
     TABLE_RASTER_GAPS_NORM = TABLE_RASTER_GAPS_NORM,
-    LOWEST_REC = lowest_rec,
-    PING_THRESH = ping_thresh,
+    MIN_POSITIONS_PER_DAY = min_positions_per_day,
+    MIN_POSITIONS_BEFORE = min_positions_before,
+    MIN_GAP_HOURS = min_gap_hours,
+    MIN_DISTANCE_FROM_SHORE_M = min_distance_from_shore_m,
+    START_DATE = START_DATE,
+    END_DATE = END_DATE,
   )
 
   df_close_to_line = gbq(q_close_to_line)
@@ -356,5 +368,5 @@ def close_to_line(figures_folder=None):
 if __name__ == "__main__":
     figures_folder = get_figures_folder(None)
     # probability_rasters(figures_folder)
-    # spatially_allocated_gaps(figures_folder)
+    spatially_allocated_gaps(figures_folder)
     close_to_line(figures_folder)

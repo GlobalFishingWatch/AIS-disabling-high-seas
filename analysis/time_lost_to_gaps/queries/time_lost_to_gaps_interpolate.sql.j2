@@ -1,5 +1,4 @@
 with
-# Vessel class
 vessel_info AS (
 select 
   ssvid, 
@@ -9,20 +8,12 @@ select
 from `{{TABLE_FISHING_VESSELS}}`
 ),
 
-
 real_gaps as
 (
 select distinct gap_id
 from
   `{{TABLE_GAPS_FEATURES}}`
-WHERE gap_hours >= 12
- -- for spatial allocation, require start or end to be larger than 50 nautical miles
- -- to avoid counting gaps that are in port  
-    AND off_distance_from_shore_m > 1852*50
-    AND on_distance_from_shore_m > 1852*50
-    AND positions_per_day_off > {{LOWEST_REC}}
-    AND (DATE(gap_start) >= '2017-01-01' AND DATE(gap_end) <= '2019-12-31')
-    AND positions_12_hours_before_sat >= {{PING_THRESH}}
+{{GAP_FILTERS}}
 )
 
 select
@@ -50,10 +41,8 @@ ON
 left join real_gaps d
 using(gap_id)
 where
-date(_partitiontime) between "2017-01-01" and "2019-12-31" -- 3 years of data
- -- only analyzing more than 50 nautical miles from shore
- and
-gap_hours > 12
+(date(gap_start) >= '{{START_DATE}}' and date(gap_end) <= '{{END_DATE}}')
+and gap_hours >= {{MIN_GAP_HOURS}}
 and gap_id = '{{GAP_ID}}'
 group by lat_index, lon_index, vessel_class, is_real_gap, over_200_nm, flag, over_50nm,
 over_one_week, over_four_weeks, over_two_weeks

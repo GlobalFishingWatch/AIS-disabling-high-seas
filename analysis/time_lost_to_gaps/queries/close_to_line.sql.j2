@@ -46,19 +46,17 @@ gap_table as
         gap_distance_m / 1000 as gap_distance_km,
         st_geogpoint(off_lon, off_lat) as gap_start_point,
         st_geogpoint(on_lon, on_lat) as gap_end_point,
-        (positions_per_day_off > {{LOWEST_REC}}
-        and positions_12_hours_before_sat >= {{PING_THRESH}}) as is_real_gap,
+        (positions_per_day_off > {{MIN_POSITIONS_PER_DAY}}
+        and positions_12_hours_before_sat >= {{MIN_POSITIONS_BEFORE}}) as is_real_gap,
         gap_hours / 24 > 14 as over_two_weeks
  -- for spatial allocation, require start or end to be larger than 50 nautical miles
  -- to avoid counting gaps that are in port  
 from
   `{{TABLE_GAPS_FEATURES}}`
     where
-        gap_hours >= 12
-         and (
-             off_distance_from_shore_m > 1852 * 50 and on_distance_from_shore_m > 1852 * 50
-        )
-        and (date(gap_start) >= '2017-01-01' and date(gap_end) <= '2019-12-31')
+        gap_hours >= {{MIN_GAP_HOURS}}
+        and off_distance_from_shore_m > 1852 * {{MIN_DISTANCE_FROM_SHORE_M}}
+        and (date(gap_start) >= '{{START_DATE}}' and date(gap_end) <= '{{END_DATE}}')
 
 
 ),
