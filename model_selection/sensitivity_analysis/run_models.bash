@@ -1,0 +1,13 @@
+python -m model_selection --lowest_rec 0
+python -m model_selection --lowest_rec 5
+python -m model_selection --lowest_rec 10
+python -m model_selection --lowest_rec 15
+python -m model_selection --lowest_rec 20
+python -m model_selection --lowest_rec 25
+python -m model_selection --lowest_rec 30
+python -m model_selection --lowest_rec 35
+python -m model_selection --lowest_rec 40
+python -m model_selection --lowest_rec 45
+python -m model_selection --lowest_rec 50
+python -m model_selection --lowest_rec 55
+python -m model_selection --lowest_rec 60

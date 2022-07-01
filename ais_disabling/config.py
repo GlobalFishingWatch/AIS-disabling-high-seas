@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, date
 ###############################################
 
 # Test run queries?
-test_run = True
+test_run = False
 
 # BQ datasets/tables
 gfw_research = 'gfw_research'
@@ -30,9 +30,6 @@ create_tables = True
 # Date range of analysis
 start_date = date(2017,1, 1)
 end_date = date(2019,12, 31)
-
-# Min gap hours in raw gaps table
-min_gap_hours = 6
 
 ###############################################
 # Dates to run
@@ -56,12 +53,17 @@ reception_dates = pd.date_range(start_date, end_date, freq='1M') - pd.offsets.Mo
 # Suspected disabling event filters
 ###############################################
 
+min_gap_hours = 12
+min_distance_from_shore_m = 50
+min_positions_per_day = 10
+min_positions_before = 14
+
 gap_filters = f"""
-WHERE gap_hours >= 12
+WHERE gap_hours >= {min_gap_hours}
 AND (DATE(gap_start) >= '{tp[0]}' AND DATE(gap_end) <= '{tp[-1]}')
-AND off_distance_from_shore_m > 1852*50
-AND positions_per_day_off > 10
-AND positions_12_hours_before_sat >= 14
+AND off_distance_from_shore_m > 1852*{min_distance_from_shore_m}
+AND positions_per_day_off > {min_positions_per_day}
+AND positions_12_hours_before_sat >= {min_positions_before}
 """
 
 ###############################################
@@ -76,6 +78,7 @@ off_events_table = f'ais_off_events_{output_version}'
 on_events_table = f'ais_on_events_{output_version}'
 gap_events_table = f'ais_gap_events_{output_version}'
 gap_events_features_table = f'ais_gap_events_features_{output_version}'
+gap_events_labeled_table = f'ais_gap_events_labeled_{output_version}'
 
 # Loitering
 loitering_events_table = f'loitering_events_{output_version}'
@@ -100,6 +103,8 @@ raster_gaps_norm_table = f'raster_gaps_norm_{output_version}'
 gaps_allocated_raster_table = f'gaps_allocated_raster_{output_version}'
 gaps_allocated_interpolate_table = f'gaps_allocated_interpolate_{output_version}'
 fishing_allocated_table = f'fishing_activity_{output_version}'
+pipe_static_distance_from_shore = 'pipe_static.distance_from_shore'
+gap_positions_hourly = f'gap_positions_hourly_{output_version}'
 
 ###############################################
 # Coordinate defaults for plotting functions

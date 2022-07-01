@@ -3,6 +3,8 @@
 
 **`run_gaps.py`**: Main script to produce GFW datasets on AIS gap events, reception quality, and gridded fishing and loitering activity.
 
+**`run_labeled_gaps.py`**: Creates a table in BigQuery for the gaps that are in GFW and Exact Earth along with their classification as a true or false gap.
+
 **`utils.py`**: Utility functions to support `run_gaps.py`
 
 ## Queries

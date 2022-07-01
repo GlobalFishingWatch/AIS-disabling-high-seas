@@ -7,7 +7,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.13.0
+#       jupytext_version: 1.6.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -20,6 +20,13 @@
 
 # +
 import pandas as pd
+import numpy as np
+
+from ais_disabling import config
+
+# %matplotlib inline
+# %load_ext autoreload
+# %autoreload 2
 
 def gbq(q):
     return pd.read_gbq(q, project_id='world-fishing-827')
@@ -27,9 +34,7 @@ def gbq(q):
 
 # -
 
-# ## Interpolation method
-#
-# ### By vessel class
+# ## Time lost to gaps query
 
 query_template = '''
 WITH
@@ -40,10 +45,10 @@ good_enough_reception as (
     SELECT
     lat_bin,
     lon_bin
-    FROM `world-fishing-827.proj_ais_gaps_catena.sat_reception_smoothed_one_degree_v20210722`
+    FROM `{d}.{sat_table}`
     WHERE class = "A"
     GROUP BY lat_bin, lon_bin
-    HAVING AVG(positions_per_day) > 5
+    HAVING AVG(positions_per_day) > {min_positions}
 ),
 --
 -- Gridded activity by fishing vessels active beyond 50 nautical miles. Note David renamed tuna_purse_seines
@@ -51,14 +56,13 @@ good_enough_reception as (
 --
 fishing_activity AS(
     SELECT
-    IF(vessel_class IN ('trawlers','drifting_longlines','purse_seines','squid_jigger'), vessel_class, 'other_geartypes') as vessel_class,
+    IF(vessel_class = 'other', 'other_geartypes', vessel_class) as vessel_class,
     IF(flag IN ('CHN','TWN','ESP','KOR'), flag, 'other_flags') as flag,
     hours_in_gaps_under_12
-    FROM {gridded_fishing_table}
+    FROM `{d}.{gridded_fishing_table}`
     JOIN good_enough_reception
     ON floor(lat_index) = lat_bin
     AND floor(lon_index) = lon_bin
-    WHERE over_50nm
 ),
 --
 -- Summarize activity by vessel class for fishing vessels on the high seas
@@ -98,31 +102,19 @@ total_fishing_activity_by_class as (
     SELECT * FROM total_fishing
 ),
 --
--- Get all gaps that start in the high seas
+-- Get all disabling events that start in the study area
 --
 all_disabling_events AS (
     SELECT
-        gap_id,
-        -- adjust vessel classes to match aggregation David did in gridded activity tables...
-        CASE
-            WHEN vessel_class IN ('trawlers','drifting_longlines','squid_jigger') THEN vessel_class
-            WHEN vessel_class = 'tuna_purse_seines' THEN 'purse_seines'
-            ELSE 'other_geartypes'
-            END as vessel_class,
-        -- IF(vessel_class IN ('trawlers','drifting_longlines','tuna_purse_seines','squid_jigger'), vessel_class, 'other_geartypes') as vessel_class,
+        gap_id,    
+        IF(vessel_class = 'other', 'other_geartypes', vessel_class) as vessel_class,
         IF(flag IN ('CHN','TWN','ESP','KOR'), flag, 'other_flags') as flag,
         gap_hours,
         -- Flag disabling events over certain durations to calculate average duration later
         gap_hours > 14*24 over_two_weeks,
         gap_hours > 7*24*4 over_four_weeks,
-    FROM `world-fishing-827.proj_ais_gaps_catena.ais_gap_events_features_v20210722`
-    WHERE gap_hours >= 12
-    AND (positions_per_day_off > 5 AND positions_per_day_on > 5)
-    AND positions_X_hours_before_sat >= 19
-    AND off_distance_from_shore_m > 1852 * 50
-    AND on_distance_from_shore_m > 1852 * 50
-    AND DATE(gap_start) >= '2017-01-01'
-    AND DATE(gap_end) <= '2019-12-31'
+    FROM `{d}.{gap_table}`
+    {gap_filters}
 ),
 --
 -- Summarize the number of disabling events by vessel class and for all vessels
@@ -163,13 +155,13 @@ gaps_summarized_by_flag AS (
 gaps AS (
     SELECT
     * EXCEPT(vessel_class, flag),
-    IF(vessel_class IN ('trawlers','drifting_longlines','purse_seines','squid_jigger'), vessel_class, 'other_geartypes') as vessel_class,
+    IF(vessel_class = 'other', 'other_geartypes', vessel_class) as vessel_class,
     IF(flag IN ('CHN','TWN','ESP','KOR'), flag, 'other_flags') as flag
-    FROM {gridded_gap_table}
+    FROM `{d}.{gridded_gap_table}`
     JOIN good_enough_reception
     ON floor(lat_index) = lat_bin
     AND floor(lon_index) = lon_bin
-    WHERE over_50nm
+    WHERE over_50_nm
 ),
 --
 -- Summarize the time spent in gaps for all vessels
@@ -267,23 +259,71 @@ UNION ALL
 SELECT * FROM summary_by_flag
 '''
 
-q = query_template.format(gridded_fishing_table = 'proj_ais_gaps_catena.fishing_activity_v20211203',
-                          gridded_gap_table = 'proj_ais_gaps_catena.gaps_allocated_interpolate_v20211203')
-print(q)
-# dfi = gbq(q)
+# ## Interpolation method results
+
+q = query_template.format(
+    d = config.destination_dataset,
+    sat_table = config.sat_reception_smoothed,
+    min_positions = config.min_positions_before,
+    gap_table = config.gap_events_features_table,
+    gap_filters = config.gap_filters,
+    gridded_fishing_table = config.fishing_allocated_table,
+    gridded_gap_table = config.gaps_allocated_interpolate_table
+ )
+# print(q)
+dfi = gbq(q)
 
 print("Fraction of time lost by class - 2 week versus all time, using interpolation method")
 for index,row in dfi.iterrows():
-    print(f"{100*row.frac_gaps_2w:.1f}-{100*row.frac_gaps:.1f}% - {row.vessel_class}")
+    print(f"{100*row.frac_gaps_2w:.1f}-{100*row.frac_gaps:.1f}% - {row.vessel_group}")
 
-dfi[['vessel_class',
-    'disabling_events',
-    'real_gap_days_2w',
-    'real_gap_days',
-    'frac_gaps_2w',
-    'frac_gaps',
-    'avg_gap_days_2w',
-    'avg_gap_days']]
+# ### Save Table 1
+
+# +
+gear_groups = ['drifting_longlines','squid_jigger','tuna_purse_seines','trawlers','other_geartypes']
+flag_groups = ['CHN','TWN','ESP','KOR','other_flags']
+vessel_groups = gear_groups + flag_groups + ['all vessels']
+
+rows = []
+for vessel_group in vessel_groups:
+    r = dfi[dfi['vessel_group'] == vessel_group]
+    rows.append([
+        vessel_group.replace("_", " "),
+        r.disabling_events.sum(),
+        f"{round(r.real_gap_days_2w.sum())} - {round(r.real_gap_days.sum())}",
+        f"{round(r.frac_gaps_2w.sum()*100, 1)} - {round(r.frac_gaps.sum()*100, 1)}",
+        f"{round(r.avg_gap_days_2w.sum(), 1)} - {round(r.avg_gap_days.sum(), 1)}",
+    ])
+
+table_1 = pd.DataFrame(rows, 
+                       columns = [
+                         'Vessel group',
+                         'AIS disabling events',
+                         'Time (days) lost to AIS disabling events',
+                         'Fraction of time lost to AIS disabling events',
+                         'Average duration (days)'
+                         ])
+
+# Reorder table
+table_1.set_index('Vessel group', inplace = True)
+
+table_1.reindex([
+    'drifting longlines',
+    'squid jigger',
+    'tuna purse seines',
+    'trawlers',
+    'other geartypes',
+    'CHN',
+    'TWN',
+    'ESP',
+    'KOR',
+    'other flags',
+    'all vessels'
+])
+
+# Save to CSV
+table_1.to_csv(f'../../results/gap_inputs_{config.output_version}/table_1_time_lost_to_gaps_{config.output_version}.csv')
+# -
 
 # Calculate the percent of disabling events by top flags and geartypes.
 
@@ -291,34 +331,85 @@ dfi[['vessel_class',
 top_flag_events = dfi[dfi['vessel_group'].isin(['KOR','ESP','CHN','TWN'])]['disabling_events'].sum()
 all_events = dfi[dfi['vessel_group'] == 'all vessels']['disabling_events'].sum()
 
-top_flag_events / all_events * 100
-# -
+print(f"The top flag states (KOR, ESP, CHN, and TWN) represent {round(top_flag_events / all_events * 100, 1)}% of disabling events")
 
+# +
 top_gear_events = dfi[dfi['vessel_group'].isin(['drifting_longlines',
                                                 'purse_seines',
                                                 'trawlers',
                                                 'squid_jigger'])]['disabling_events'].sum()
-top_gear_events / all_events * 100
 
-# ## Now with raster method
+print(f"The top geartypes represent {round(top_gear_events / all_events * 100, 1)}% of disabling events")
+# -
 
-q = query_template.format(gridded_fishing_table = 'proj_ais_gaps_catena.fishing_activity_v20211203',
-                          gridded_gap_table = 'proj_ais_gaps_catena.gaps_allocated_raster_v20211203')
+# ## Raster method results
+
+q = query_template.format(
+    d = config.destination_dataset,
+    sat_table = config.sat_reception_smoothed,
+    min_positions = config.min_positions_before,
+    gap_table = config.gap_events_features_table,
+    gap_filters = config.gap_filters,
+    gridded_fishing_table = config.fishing_allocated_table,
+    gridded_gap_table = config.gaps_allocated_raster_table
+ )
 dfr = gbq(q)
+# print(q)
 
 print("Fraction of time lost by class - 2 week versus all time, using raster method")
 for index,row in dfr.iterrows():
-    print(f"{100*row.frac_gaps_2w:.1f}-{100*row.frac_gaps:.1f}% - {row.vessel_class}")
+    print(f"{100*row.frac_gaps_2w:.1f}-{100*row.frac_gaps:.1f}% - {row.vessel_group}")
 
-dfr[['vessel_group',
-    'disabling_events',
-#     'real_gap_days_2w',
-    'real_gap_days',
-#     'frac_gaps_2w',
-    'frac_gaps',
-#     'avg_gap_days_2w',
-    'avg_gap_days']]
+# ### Save Table S3
+#
+# Produce the supplementary table comparing the interpolation vs raster methods.
 
+# +
+rows = []
+for vessel_group in vessel_groups:
+    i = dfi[dfi['vessel_group'] == vessel_group]
+    r = dfr[dfr['vessel_group'] == vessel_group]
+    rows.append([
+        vessel_group.replace("_", " "),
+        r.disabling_events.sum(),
+        f"{round(i.real_gap_days.sum())} ({round(r.real_gap_days.sum())})",
+        f"{round(i.frac_gaps.sum()*100, 1)} ({round(r.frac_gaps.sum()*100, 1)})",
+        f"{round(i.avg_gap_days.sum(), 1)} ({round(r.avg_gap_days.sum(), 1)})",
+    ])
+
+table_s = pd.DataFrame(rows, 
+                       columns = [
+                         'Vessel group',
+                         'AIS disabling events',
+                         'Time (days) lost to AIS disabling events',
+                         'Fraction of time lost to AIS disabling events',
+                         'Average duration (days)'
+                         ])
+
+# Reorder table
+table_s.set_index('Vessel group', inplace = True)
+
+table_s.reindex([
+    'drifting longlines',
+    'squid jigger',
+    'tuna purse seines',
+    'trawlers',
+    'other geartypes',
+    'CHN',
+    'TWN',
+    'ESP',
+    'KOR',
+    'other flags',
+    'all vessels'
+])
+
+# Save to CSV
+table_s.to_csv(f'../../results/gap_inputs_{config.output_version}/table_s3_interp_vs_raster_{config.output_version}.csv')
+# -
+
+# ### Calculate fraction of time by other geartypes and flag states
+
+# +
 # what fraction of time lost to gaps is by non-other vessel classes?
 other_2wf = (
     dfr[dfr.vessel_group == "other_geartypes"].real_gap_hours_2w.values[0]
@@ -332,7 +423,11 @@ other = (
     dfr[dfr.vessel_group == "other_geartypes"].real_gap_hours.values[0]
     / dfr[dfr.vessel_group != "all vessels"].real_gap_hours.sum()
 )
-print(other_2wf, other_4wf, other)
+
+# print(other_2wf, other_4wf, other)
+print(f"Other geartypes made up {round(other_2wf*100, 1)}-{round(other*100, 1)}% time lost to disabling)")
+print(f"Main geartypes made up {round((1-other_2wf)*100, 1)}-{round((1-other)*100, 1)}% time lost to disabling)")
+# -
 
 # what fraction of time lost to gaps is by non-other?
 other_2wf = (
@@ -347,7 +442,9 @@ other = (
     dfr[dfr.vessel_group == "other_flags"].real_gap_hours.values[0]
     / dfr[dfr.vessel_group != "all vessels"].real_gap_hours.sum()
 )
-print(other_2wf, other_4wf, other)
+# print(other_2wf, other_4wf, other)
+print(f"Other flags made up {round(other_2wf*100, 1)}-{round(other*100, 1)}% time lost to disabling)")
+print(f"Main flags made up {round((1-other_2wf)*100, 1)}-{round((1-other)*100, 1)}% time lost to disabling)")
 
 # ## Time lost in areas of interest
 #
@@ -370,25 +467,25 @@ good_enough_reception as (
     SELECT
     lat_bin,
     lon_bin
-    FROM `world-fishing-827.proj_ais_gaps_catena.sat_reception_smoothed_one_degree_v20210722`
+    FROM `{d}.{sat_table}`
     WHERE class = "A"
     GROUP BY lat_bin, lon_bin
-    HAVING AVG(positions_per_day) > 5
+    HAVING AVG(positions_per_day) > {min_positions}
 ),
 --
--- Gridded activity by fishing vessels active beyond 50 nautical miles. Note David renamed tuna_purse_seines
--- to purse_seines in the fishing_activity table
+-- Gridded activity by fishing vessels active beyond 50 nautical miles. Note: fishing activity
+-- table is already filtered to >50nm
 --
 fishing_activity AS(
     SELECT
     lat_bin,
     lon_bin,
     hours_in_gaps_under_12
-    FROM {gridded_fishing_table}
+    FROM {d}.{gridded_fishing_table}
     JOIN good_enough_reception
     ON floor(lat_index) = lat_bin
     AND floor(lon_index) = lon_bin
-    WHERE over_50nm
+    #WHERE over_50nm # fishing table now filters to 50nm
 ),
 --
 -- Label cells in the bounding box AOIS
@@ -432,11 +529,11 @@ total_fishing AS (
 gaps AS (
     SELECT
     *
-    FROM {gridded_gaps_table}
+    FROM {d}.{gridded_gaps_table}
     JOIN good_enough_reception
     ON floor(lat_index) = lat_bin
     AND floor(lon_index) = lon_bin
-    WHERE over_50nm
+    WHERE over_50_nm
 ),
 --
 -- Assign gaps to AOIs
@@ -507,27 +604,33 @@ frac_by_aoi AS (
 SELECT * FROM frac_by_aoi
 '''
 
+q = query_template.format(
+    d = config.destination_dataset,
+    sat_table = config.sat_reception_smoothed,
+    min_positions = config.min_positions_before,
+    gridded_fishing_table = config.fishing_allocated_table,
+    gridded_gaps_table = config.gaps_allocated_raster_table
+ )
+dfr = gbq(q)
+# print(q)
+
+print(f"{dfr.loc[dfr['region'] != 'OTHER', ['frac_gaps_2w']].sum()} \
+- {dfr.loc[dfr['region'] != 'OTHER', ['frac_gaps']].sum()}% of time lost to disabling in Argentina/NW Pacific/W Africa")
+
 # ## Fraction of fishing vessels with disabling events
 #
 # Calculate the fraction of fishing vessels active in the study region had suspected disabling events.
 
-ssvid_query_template = '''
+ssvid_query_template = f'''
 WITH
 --
 -- Get all gaps that start in the study area
 --
 all_disabling_ssvid AS (
     SELECT
-    -- COUNT(DISTINCT gap_id) as events,
     COUNT(DISTINCT ssvid) as ssvid_with_gaps
-    FROM `world-fishing-827.proj_ais_gaps_catena.ais_gap_events_features_v20210722`
-    WHERE gap_hours >= 12
-    AND (positions_per_day_off > 5 AND positions_per_day_on > 5)
-    AND positions_X_hours_before_sat >= 19
-    AND off_distance_from_shore_m > 1852 * 50
-    AND on_distance_from_shore_m > 1852 * 50
-    AND DATE(gap_start) >= '2017-01-01'
-    AND DATE(gap_end) <= '2019-12-31'
+    FROM `{config.destination_dataset}.{config.gap_events_features_table}`
+    {config.gap_filters}
 ),
 --
 -- Get areas above reception threshold
@@ -536,10 +639,10 @@ good_enough_reception as (
     SELECT
     lat_bin,
     lon_bin
-    FROM `world-fishing-827.proj_ais_gaps_catena.sat_reception_smoothed_one_degree_v20210722`
+    FROM {config.destination_dataset}.{config.sat_reception_smoothed}
     WHERE class = "A"
     GROUP BY lat_bin, lon_bin
-    HAVING AVG(positions_per_day) > 5
+    HAVING AVG(positions_per_day) > {config.min_positions_per_day}
 ),
 --
 -- Fishing vessels operating outside 50nm in good enough reception
@@ -548,18 +651,19 @@ all_fishing_ssvid AS (
     SELECT DISTINCT
     ssvid,
     EXTRACT(YEAR from timestamp) as year
-    FROM `world-fishing-827.gfw_research.pipe_v20201001_fishing`
+    FROM `{config.pipeline_dataset}.{config.pipeline_table}`
     JOIN good_enough_reception
     ON floor(lat_bin) = FLOOR(lat)
     AND floor(lon_bin) = FLOOR(lon)
-    WHERE _partitiontime BETWEEN '2017-01-01' AND '2019-12-31'
-    AND distance_from_shore_m > 1852 * 50
+    WHERE _partitiontime BETWEEN '{config.start_date}' AND '{config.end_date}'
+    AND distance_from_shore_m > 1852 * {config.min_distance_from_shore_m}
     -- Noise filter to only include vessels with good segments
     AND seg_id IN (
         SELECT seg_id
-        FROM `world-fishing-827.gfw_research.pipe_v20201001_segs`
+        FROM `{config.pipeline_dataset}.{config.segs_table}`
         WHERE good_seg
-        AND positions > 10)
+        AND NOT overlapping_and_short
+        )
 ),
 --
 -- Join with fishing vessel list. Version used in gaps dataset creation.
@@ -568,7 +672,7 @@ all_fishing_ssvid_filtered AS (
     SELECT DISTINCT
     ssvid
     FROM all_fishing_ssvid
-    JOIN `world-fishing-827.gfw_research.fishing_vessels_ssvid_v20210301`
+    JOIN `{config.destination_dataset}.{config.fishing_vessels_table}`
     USING(ssvid, year)
 )
 --
@@ -584,6 +688,10 @@ CROSS JOIN (
     FROM all_fishing_ssvid_filtered
 ) '''
 
-# +
 # Run query (expensive, commented out by default)
-# ssvid_df = gbq(ssvid_query_template)
+# print(ssvid_query_template)
+ssvid_df = gbq(ssvid_query_template)
+
+ssvid_df
+
+
