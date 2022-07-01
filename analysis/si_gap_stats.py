@@ -59,3 +59,20 @@ SELECT
 FROM `{config.destination_dataset}.{config.gap_events_features_table}`
 WHERE gap_hours >= 12
 """
+
+gap_frac_df = pd.read_gbq(gap_frac_query, project = 'world-fishing-827')
+
+######################################################################
+# Fraction of disabling events less than two weeks long
+######################################################################
+
+gap_frac_2w_query = f"""
+SELECT
+    COUNTIF(gap_hours < 24*14) gaps_two_weeks,
+    COUNT(*) gaps,
+    COUNTIF(gap_hours < 24*14) / COUNT(*) * 100 as frac_two_week_gaps
+FROM `{config.destination_dataset}.{config.gap_events_features_table}`
+{config.gap_filters}
+"""
+
+gap_frac_2w_df = pd.read_gbq(gap_frac_2w_query, project = 'world-fishing-827')
