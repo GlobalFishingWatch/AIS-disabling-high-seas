@@ -90,7 +90,7 @@ fishing_brt_table = f"gridded_fishing_brt_{output_version}"
 
 # Interpolated position tables
 ais_positions_hourly = f'ais_positions_byseg_hourly_{output_version}'
-loitering_positions_hourly = f'loitering_positions_byseg_hourly_{output_version}'
+loitering_positions_hourly_table = f'loitering_positions_hourly_{output_version}'
 gap_positions_hourly_table = f"gap_positions_hourly_{output_version}"
 
 # Reception quality tables

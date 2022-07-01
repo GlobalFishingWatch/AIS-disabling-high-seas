@@ -155,7 +155,8 @@ GROUP BY 1,2,3
 '''
 
 # Query data 
-residuals_df = pd.read_gbq(residuals_query, project_id = 'world-fishing-827')
+# print(residuals_query)
+# residuals_df = pd.read_gbq(residuals_query, project_id = 'world-fishing-827')
 # -
 
 # Plot residuals
@@ -166,3 +167,101 @@ plt.savefig(f"../results/gap_figures_{output_version}/figure_si_reception_residu
 
 utils.plot_residual_histogram(residuals_df)
 plt.savefig(f"../results/gap_figures_{output_version}/figure_si_reception_residual_histogram.png",dpi=200, facecolor=plt.rcParams['pyseas.fig.background'])
+
+# ### Residuals over/under threshold
+#
+# Analyze the areas where over/under prediction of reception quality results in the removal/addition of suspected disabling events and caluculate what fraction of disabling time this represents.
+
+# Identify areas where our average prediction results in a cell being below threshold
+over_under_query = f'''
+WITH
+--
+-- Label grid cells where the reception quality was over/under predicted
+-- relative to the 10 position threshold in a given month.
+--
+residuals AS (
+  SELECT 
+  b.year,
+  b.month,
+  a.lat_bin,
+  a.lon_bin,
+  a.cls as class,
+  IF(a.sat_pos_per_day >= {config.min_positions_per_day} AND b.positions_per_day < {config.min_positions_per_day}, True, False) as under_predicted,
+  IF(a.sat_pos_per_day <= {config.min_positions_per_day} AND b.positions_per_day > {config.min_positions_per_day}, True, False) as over_predicted
+  FROM `{destination_dataset}.{sat_reception_measured_tbl}` a
+  JOIN `{destination_dataset}.{sat_reception_smoothed_tbl}` b
+  ON (
+    a.lat_bin = b.lat_bin
+    AND a.lon_bin = b.lon_bin
+    AND a.cls = b.class
+    AND a._partitiontime = b._partitiontime
+    )
+  WHERE a._partitiontime BETWEEN "{start_date}" AND "{end_date}"
+  AND b._partitiontime BETWEEN "{start_date}" AND "{end_date}"
+),
+--
+-- Pull out potential disabling events (minus the reception requirement)
+--
+potential_disabling AS (
+  SELECT
+    lat_bin,
+    lon_bin,
+    class,
+    year,
+    month,
+    SUM(gap_hours) as gap_hours,
+    SUM(real_gap_hours) as real_gap_hours
+  FROM(
+    SELECT
+        gap_id,
+        year,
+        EXTRACT(month from gap_start) as month,
+        off_class as class,
+        FLOOR(off_lat) as lat_bin,
+        FLOOR(off_lon) as lon_bin,
+        gap_hours,
+        IF(positions_per_day_off > {config.min_positions_per_day}, gap_hours, 0) as real_gap_hours
+    FROM `{config.destination_dataset}.{config.gap_events_features_table}`
+    WHERE off_distance_from_shore_m > 1852*{config.min_distance_from_shore_m}
+    AND gap_hours >= {config.min_gap_hours}
+    AND DATE(gap_start) >= '{start_date}'
+    AND DATE(gap_end) <= '{end_date}'
+    AND positions_12_hours_before_sat >= {config.min_positions_before}
+  )
+  GROUP BY lat_bin, lon_bin, class, year, month
+),
+--
+-- Label gaps where the reception quality was over/under predicted 
+-- relative to the threshold
+--
+over_under_predict AS (
+  SELECT 
+    lat_bin,
+    lon_bin,
+    class,
+    year, 
+    month,
+    gap_hours,
+    real_gap_hours,
+    IF(over_predicted, gap_hours, 0) as over_predicted_hours,
+    IF(under_predicted, gap_hours, 0) as under_predicted_hours
+  FROM potential_disabling
+  JOIN residuals
+  USING(lat_bin, lon_bin, class, year, month)
+)
+--
+-- Summarize the amount and fraction of disabling activity that was added/dropped
+-- as a result of over/under prediction
+SELECT 
+ROUND(SUM(real_gap_hours) / 24) as real_gap_days,
+ROUND(SUM(over_predicted_hours) / 24) as over_predicted_days,
+ROUND(SUM(over_predicted_hours) / SUM(real_gap_hours) * 100, 2) as frac_overpredicted,
+ROUND(SUM(under_predicted_hours) / 24) as under_predicted_days,
+ROUND(SUM(under_predicted_hours) / SUM(real_gap_hours) * 100, 2) as frac_underpredicted,
+FROM over_under_predict'''
+
+over_under_df = pd.read_gbq(over_under_query, project_id = 'world-fishing-827')
+
+over_under_df
+
+

@@ -340,92 +340,6 @@ fishing_brt_cmd = utils.make_gridded_fishing_brt_table(gridded_fishing_table = f
 if create_tables:
     os.system(fishing_brt_cmd)
 
-# # AIS Interpolation
-#
-# The next step is to generate tables of interpolated vessel positions. These tables are used subsequently for the following:
-# - AIS reception
-# - Time lost to gaps
-#
-# > The original reception quality method used a slightly different interpolation [query](https://github.com/GlobalFishingWatch/ais-gaps-and-reception/blob/master/data-production/hourly_interpoloation_v20191120.sql.j2)/table (`gfw_research_precursors.ais_positions_byssvid_hourly_v20191118`) than the [query](https://github.com/GlobalFishingWatch/ais-gaps-and-reception/blob/master/data-production/pipe-interpolation/hourly_interpoloation_v20201027.sql.j2) used to estimate time lost to gaps. These approaches have been combined/streamlined into the `interpolation/hourly_interpolation_byseg.sql.j2` in this repo. This query was used to generate the interpolated positions for reception quality and is similar in form to the query used to generate interpolated fishing vessels positions (`hourly_fishing_interpolation.sql.j2`).
-#
-# ### Create tables
-#
-# First create empty date partitioned tables to store interpolated positions.
-
-# Destination tables
-ais_positions_hourly = 'ais_positions_byseg_hourly_{}'.format(output_version)
-ais_positions_hourly_fishing = 'ais_positions_byseg_hourly_fishing_{}'.format(output_version)
-loitering_positions_hourly = 'loitering_positions_byseg_hourly_{}'.format(output_version)
-
-# Create tables:
-
-# +
-# all positions hourly
-try:
-    client.get_table("{d}.{t}".format(d = destination_dataset, t = ais_positions_hourly))
-    print("Table {d}.{t} already exists".format(d = destination_dataset, t = ais_positions_hourly))
-except NotFound:
-    print("Table {d}.{t} is not found.".format(d = destination_dataset, t = ais_positions_hourly))
-    print("Creating table {d}.{t}.".format(d = destination_dataset, t = ais_positions_hourly))
-    # create table if needed
-    utils.make_bq_partitioned_table(destination_dataset, ais_positions_hourly)
-
-# fishing vessel positions
-try:
-    client.get_table("{d}.{t}".format(d = destination_dataset, t = ais_positions_hourly_fishing))
-    print("Table {d}.{t} already exists".format(d = destination_dataset, t = ais_positions_hourly_fishing))
-except NotFound:
-    print("Table {d}.{t} is not found.".format(d = destination_dataset, t = ais_positions_hourly_fishing))
-    print("Creating table {d}.{t}.".format(d = destination_dataset, t = ais_positions_hourly_fishing))
-    # Create table if needed
-    utils.make_bq_partitioned_table(destination_dataset, ais_positions_hourly_fishing)
-
-# loitering positions
-try:
-    client.get_table("{d}.{t}".format(d = destination_dataset, t = loitering_positions_hourly))
-    print("Table {d}.{t} already exists".format(d = destination_dataset, t = loitering_positions_hourly))
-except NotFound:
-    print("Table {d}.{t} is not found.".format(d = destination_dataset, t = loitering_positions_hourly))
-    print("Creating table {d}.{t}.".format(d = destination_dataset, t = loitering_positions_hourly))
-    # Create table if needed
-    utils.make_bq_partitioned_table(destination_dataset, loitering_positions_hourly)
-# -
-
-# ### Interpolate all vessel positions
-#
-# Interpolate positions for all vessels.
-
-# Store commands
-int_cmds = []
-for t in tp:
-    cmd = utils.make_hourly_interpolation_table(date = t,
-                                                destination_dataset = destination_dataset,
-                                                destination_table = ais_positions_hourly)
-    int_cmds.append(cmd)
-
-utils.execute_commands_in_parallel(int_cmds)
-
-# ### Interpolate fishing vessel positions
-# Interpolate positions for fishing vessels, including both `nnet_score` and `night_loitering` for determining when `squid_jiggers` are fishing.
-
-# Store commands
-int_fishing_cmds = []
-for t in tp:
-    cmd = utils.make_hourly_fishing_interpolation_table(date = t,
-                                                destination_dataset = destination_dataset,
-                                                destination_table = ais_positions_hourly_fishing)
-    int_fishing_cmds.append(cmd)
-
-# +
-# test query
-# test_cmd = int_fishing_cmds[0].split('|')[0]
-# test_cmd
-# os.system(test_cmd)
-# -
-
-# Run commands
-utils.execute_commands_in_parallel(int_fishing_cmds)
-
 # ## AIS Reception Quality
 #
 # Model AIS satellite reception quality to identify regions where AIS gap events are more/less suspicious. This is produced using the following process:
@@ -506,31 +420,6 @@ for r in reception_dates:
                                  reception_df = month_reception
                             )
 
-# Plot average reception quality across the full time series
-
-# +
-"""
-Query smoothed reception data
-"""
-month_reception_query = '''SELECT
-                           lat_bin,
-                           lon_bin,
-                           class,
-                           AVG(positions_per_day) as positions_per_day
-                           FROM `{d}.{t}`
-                           WHERE _partitiontime BETWEEN "2017-01-01"
-                           AND "2019-12-01"
-                           GROUP BY 1,2,3'''.format(d = destination_dataset,
-                                                      t = sat_reception_smoothed)
-# Query data
-month_reception = pd.read_gbq(month_reception_query, project_id='world-fishing-827', dialect='standard')
-
-utils.plot_reception_quality(reception_start_date = r,
-                             destination_dataset = destination_dataset,
-                             reception_smoothed_table = sat_reception_smoothed,
-                             reception_df = month_reception
-                        )
-# -
 
 # ### Alternate reception quality
 
@@ -561,8 +450,6 @@ for r in reception_dates:
 
 # Run commands
 utils.execute_commands_in_parallel(mr_all_speed_cmds)
-
-# Now smooth the alternate reception quality maps.
 
 for r in reception_dates[8:]:
     print(str(r.date()))

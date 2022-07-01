@@ -348,6 +348,32 @@ def make_hourly_gap_interpolation_table(destination_table,
                                                                  destination_table=destination_table)
     return cmd
 
+def make_hourly_loitering_interpolation_table(
+    destination_table,
+    destination_dataset,
+    date,
+    output_version):
+
+    # Update partition of destination table
+    destination_table = destination_table + "\$" + date.replace('-','')
+
+    # Set date as YYYY-MM-DD format
+    YYYY_MM_DD = date[:4] + "-" + date[4:6] + "-" + date[6:8]
+
+    # Format command
+    cmd = '''jinja2 data_production/interpolation/hourly_loitering_interpolation.sql.j2    \
+       -D YYYY_MM_DD="{YYYY_MM_DD}" \
+       -D input_version="{gap_version}" \
+       -D destination_dataset="{destination_dataset}" \
+       | \
+        bq query --replace \
+        --destination_table={destination_dataset}.{destination_table}\
+         --allow_large_results --use_legacy_sql=false '''.format(YYYY_MM_DD = date,
+                                                                 gap_version = output_version,
+                                                                 destination_dataset=destination_dataset,
+                                                                 destination_table=destination_table)
+    return cmd
+
 ####################################
 #
 # Reception functions
