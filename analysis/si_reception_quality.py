@@ -36,12 +36,7 @@ import pyseas.styles
 import pyseas.cm
 import cmocean
 
-# Direct notebook to see local modules for import
-module_path = os.path.abspath(os.path.join('..'))
-if module_path not in sys.path:
-    sys.path.append(module_path)
-
-from data_production import utils
+from ais_disabling import utils
 
 # %load_ext autoreload
 # %autoreload 2
@@ -49,13 +44,13 @@ from data_production import utils
 
 # +
 # Parameters
-destination_dataset = 'proj_ais_gaps_catena'
-output_version = 'v20210722'
-start_date = pd.date_range('2017-01-01', '2017-01-01', freq='1D')[0]
+# destination_dataset = 'proj_ais_gaps_catena'
+# output_version = 'v20210722'
+# start_date = pd.date_range('2017-01-01', '2017-01-01', freq='1D')[0]
 
-# Reception quality tables
-sat_reception_smoothed_tbl = 'sat_reception_smoothed_one_degree_{}'.format(output_version)
-sat_reception_measured_tbl = 'sat_reception_measured_one_degree_{}'.format(output_version)
+# # Reception quality tables
+# sat_reception_smoothed_tbl = 'sat_reception_smoothed_one_degree_{}'.format(output_version)
+# sat_reception_measured_tbl = 'sat_reception_measured_one_degree_{}'.format(output_version)
 # -
 
 # ## Reception quality

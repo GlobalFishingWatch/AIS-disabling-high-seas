@@ -16,6 +16,8 @@
 
 # # How Much Time is lost To Gaps?
 #
+# This notebook calculates the statistics on the time lost to AIS disabling in Welch et al. (2022). It produced tables 1 and S3 in the paper, as well as calculating the fraction of time lost to disabling among the top flag states, geartypes, and in disabling hotspots. It also calculates the fraction of fishing vessels in the study area with disabling events.
+#
 # Calculate the total number of events and the amount of time that is lost to gaps in the high seas. We will calculate it using the raster method and using the interpolation method.
 
 # +
@@ -57,7 +59,7 @@ good_enough_reception as (
 fishing_activity AS(
     SELECT
     IF(vessel_class = 'other', 'other_geartypes', vessel_class) as vessel_class,
-    IF(flag IN ('CHN','TWN','ESP','KOR'), flag, 'other_flags') as flag,
+    IF(flag IN ('CHN','TWN','ESP','USA'), flag, 'other_flags') as flag,
     hours_in_gaps_under_12
     FROM `{d}.{gridded_fishing_table}`
     JOIN good_enough_reception
@@ -108,7 +110,7 @@ all_disabling_events AS (
     SELECT
         gap_id,    
         IF(vessel_class = 'other', 'other_geartypes', vessel_class) as vessel_class,
-        IF(flag IN ('CHN','TWN','ESP','KOR'), flag, 'other_flags') as flag,
+        IF(flag IN ('CHN','TWN','ESP','USA'), flag, 'other_flags') as flag,
         gap_hours,
         -- Flag disabling events over certain durations to calculate average duration later
         gap_hours > 14*24 over_two_weeks,
@@ -156,7 +158,7 @@ gaps AS (
     SELECT
     * EXCEPT(vessel_class, flag),
     IF(vessel_class = 'other', 'other_geartypes', vessel_class) as vessel_class,
-    IF(flag IN ('CHN','TWN','ESP','KOR'), flag, 'other_flags') as flag
+    IF(flag IN ('CHN','TWN','ESP','USA'), flag, 'other_flags') as flag
     FROM `{d}.{gridded_gap_table}`
     JOIN good_enough_reception
     ON floor(lat_index) = lat_bin
@@ -264,14 +266,14 @@ SELECT * FROM summary_by_flag
 q = query_template.format(
     d = config.destination_dataset,
     sat_table = config.sat_reception_smoothed,
-    min_positions = config.min_positions_before,
+    min_positions = config.min_positions_per_day,
     gap_table = config.gap_events_features_table,
     gap_filters = config.gap_filters,
     gridded_fishing_table = config.fishing_allocated_table,
     gridded_gap_table = config.gaps_allocated_interpolate_table
  )
-# print(q)
-dfi = gbq(q)
+print(q)
+# dfi = gbq(q)
 
 print("Fraction of time lost by class - 2 week versus all time, using interpolation method")
 for index,row in dfi.iterrows():
@@ -281,7 +283,7 @@ for index,row in dfi.iterrows():
 
 # +
 gear_groups = ['drifting_longlines','squid_jigger','tuna_purse_seines','trawlers','other_geartypes']
-flag_groups = ['CHN','TWN','ESP','KOR','other_flags']
+flag_groups = ['CHN','TWN','ESP','USA','other_flags']
 vessel_groups = gear_groups + flag_groups + ['all vessels']
 
 rows = []
@@ -291,7 +293,7 @@ for vessel_group in vessel_groups:
         vessel_group.replace("_", " "),
         r.disabling_events.sum(),
         f"{round(r.real_gap_days_2w.sum())} - {round(r.real_gap_days.sum())}",
-        f"{round(r.frac_gaps_2w.sum()*100, 1)} - {round(r.frac_gaps.sum()*100, 1)}",
+        f"{round(r.frac_gaps_2w.sum()*100, 1)} - {round(r.frac_gaps.sum()*100, 1)}%",
         f"{round(r.avg_gap_days_2w.sum(), 1)} - {round(r.avg_gap_days.sum(), 1)}",
     ])
 
@@ -322,20 +324,21 @@ table_1.reindex([
 ])
 
 # Save to CSV
+# table_1
 table_1.to_csv(f'../../results/gap_inputs_{config.output_version}/table_1_time_lost_to_gaps_{config.output_version}.csv')
 # -
 
 # Calculate the percent of disabling events by top flags and geartypes.
 
 # +
-top_flag_events = dfi[dfi['vessel_group'].isin(['KOR','ESP','CHN','TWN'])]['disabling_events'].sum()
+top_flag_events = dfi[dfi['vessel_group'].isin(['USA','ESP','CHN','TWN'])]['disabling_events'].sum()
 all_events = dfi[dfi['vessel_group'] == 'all vessels']['disabling_events'].sum()
 
-print(f"The top flag states (KOR, ESP, CHN, and TWN) represent {round(top_flag_events / all_events * 100, 1)}% of disabling events")
+print(f"The top flag states (USA, ESP, CHN, and TWN) represent {round(top_flag_events / all_events * 100, 1)}% of disabling events")
 
 # +
 top_gear_events = dfi[dfi['vessel_group'].isin(['drifting_longlines',
-                                                'purse_seines',
+                                                'tuna_purse_seines',
                                                 'trawlers',
                                                 'squid_jigger'])]['disabling_events'].sum()
 
@@ -347,7 +350,7 @@ print(f"The top geartypes represent {round(top_gear_events / all_events * 100, 1
 q = query_template.format(
     d = config.destination_dataset,
     sat_table = config.sat_reception_smoothed,
-    min_positions = config.min_positions_before,
+    min_positions = config.min_positions_per_day,
     gap_table = config.gap_events_features_table,
     gap_filters = config.gap_filters,
     gridded_fishing_table = config.fishing_allocated_table,
@@ -398,7 +401,7 @@ table_s.reindex([
     'CHN',
     'TWN',
     'ESP',
-    'KOR',
+    'USA',
     'other flags',
     'all vessels'
 ])
@@ -425,8 +428,8 @@ other = (
 )
 
 # print(other_2wf, other_4wf, other)
-print(f"Other geartypes made up {round(other_2wf*100, 1)}-{round(other*100, 1)}% time lost to disabling)")
-print(f"Main geartypes made up {round((1-other_2wf)*100, 1)}-{round((1-other)*100, 1)}% time lost to disabling)")
+print(f"Other geartypes made up {round(other_2wf*100, 1)}-{round(other*100, 1)}% time lost to disabling")
+print(f"Main geartypes made up {round((1-other_2wf)*100, 1)}-{round((1-other)*100, 1)}% time lost to disabling")
 # -
 
 # what fraction of time lost to gaps is by non-other?
@@ -443,8 +446,8 @@ other = (
     / dfr[dfr.vessel_group != "all vessels"].real_gap_hours.sum()
 )
 # print(other_2wf, other_4wf, other)
-print(f"Other flags made up {round(other_2wf*100, 1)}-{round(other*100, 1)}% time lost to disabling)")
-print(f"Main flags made up {round((1-other_2wf)*100, 1)}-{round((1-other)*100, 1)}% time lost to disabling)")
+print(f"Other flags made up {round(other_2wf*100, 1)}-{round(other*100, 1)}% time lost to disabling")
+print(f"Main flags made up {round((1-other_2wf)*100, 1)}-{round((1-other)*100, 1)}% time lost to disabling")
 
 # ## Time lost in areas of interest
 #
@@ -509,6 +512,21 @@ fishing_activity_aoi AS (
             lat_bin BETWEEN -8 AND 23
             AND lon_bin BETWEEN -23 AND 15
         ) THEN 'WESTAFRICA'
+        -- Alaska
+        WHEN (
+            lat_bin BETWEEN 50 AND 70
+            AND lon_bin BETWEEN -180 AND -150
+        ) THEN 'ALASKA'
+        -- West Pacific
+        WHEN (
+          lat_bin BETWEEN  -5.3 and 8.2
+          AND lon_bin BETWEEN 139.5 and 180 
+        ) THEN 'WEST_PACIFIC'
+        -- Indian ocean
+        WHEN (
+          lat_bin BETWEEN   -10.8 and 9.9
+          AND lon_bin BETWEEN 42.3 and 68.9 
+        ) THEN 'INDIAN'
         ELSE 'OTHER'
         END as region
     FROM fishing_activity
@@ -557,6 +575,21 @@ gaps_aoi AS (
         lat_bin BETWEEN -8 AND 23
         AND lon_bin BETWEEN -23 AND 15
     ) THEN 'WESTAFRICA'
+    -- Alaska
+    WHEN (
+        lat_bin BETWEEN 50 AND 70
+        AND lon_bin BETWEEN -180 AND -150
+    ) THEN 'ALASKA'
+    -- West Pacific
+    WHEN (
+      lat_bin BETWEEN  -5.3 and 8.2
+      AND lon_bin BETWEEN 139.5 and 180 
+    ) THEN 'WEST_PACIFIC'
+    -- Indian ocean
+    WHEN (
+      lat_bin BETWEEN   -10.8 and 9.9
+      AND lon_bin BETWEEN 42.3 and 68.9 
+    ) THEN 'INDIAN'
     ELSE 'OTHER'
     END as region
     FROM gaps
@@ -607,15 +640,17 @@ SELECT * FROM frac_by_aoi
 q = query_template.format(
     d = config.destination_dataset,
     sat_table = config.sat_reception_smoothed,
-    min_positions = config.min_positions_before,
+    min_positions = config.min_positions_per_day,
     gridded_fishing_table = config.fishing_allocated_table,
     gridded_gaps_table = config.gaps_allocated_raster_table
  )
-dfr = gbq(q)
-# print(q)
+# dfr = gbq(q)
+print(q)
 
-print(f"{dfr.loc[dfr['region'] != 'OTHER', ['frac_gaps_2w']].sum()} \
-- {dfr.loc[dfr['region'] != 'OTHER', ['frac_gaps']].sum()}% of time lost to disabling in Argentina/NW Pacific/W Africa")
+print(f"{dfr.loc[dfr['region'] != 'OTHER', ['frac_all_gaps_2w']].sum()} \
+- {dfr.loc[dfr['region'] != 'OTHER', ['frac_all_gaps_2w']].sum()}% of time lost to disabling in Argentina/NW Pacific/W Africa/Alaska")
+
+dfr[['region','frac_all_gaps_2w','frac_all_gaps']]
 
 # ## Fraction of fishing vessels with disabling events
 #
@@ -688,10 +723,13 @@ CROSS JOIN (
     FROM all_fishing_ssvid_filtered
 ) '''
 
+# +
 # Run query (expensive, commented out by default)
 # print(ssvid_query_template)
-ssvid_df = gbq(ssvid_query_template)
+# ssvid_df = gbq(ssvid_query_template)
 
-ssvid_df
+# +
+# ssvid_df
+# -
 
 

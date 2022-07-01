@@ -26,81 +26,7 @@ raster_gaps_table = config.raster_gaps_table
 steps_to_run = ['allocate_gaps_interpolate']
 
 #########################################################################
-# 1. Interpolate positions during AIS gap events
-#########################################################################
-
-if 'gap_interpolation' in steps_to_run:
-
-    # Store commands
-    gap_int_cmds = []
-    for t in tp:
-        cmd = utils.make_hourly_gap_interpolation_table(date = t,
-                                                        output_version = output_version,
-                                                        destination_dataset = destination_dataset,
-                                                        destination_table = gap_positions_hourly_table)
-        gap_int_cmds.append(cmd)
-
-    # test query
-    if config.test_run:
-        test_cmd = gap_int_cmds[0].split('|')[0]
-        print(test_cmd)
-        os.system(test_cmd)
-
-    if config.test_run is False:
-        # Create tables if necessary
-        try:
-            config.client.get_table("{d}.{t}".format(d = destination_dataset, t = gap_positions_hourly_table))
-            print("Table {d}.{t} already exists".format(d = destination_dataset, t = gap_positions_hourly_table))
-        except NotFound:
-            print("Table {d}.{t} is not found.".format(d = destination_dataset, t = gap_positions_hourly_table))
-            print("Creating table {d}.{t}".format(d = destination_dataset, t = gap_positions_hourly_table))
-            # create interpolated gap event positions table if needed
-            utils.make_bq_partitioned_table(destination_dataset, gap_positions_hourly_table)
-
-        # Run commands
-        utils.execute_commands_in_parallel(gap_int_cmds)
-
-#########################################################################
-# 1. Interpolate AIS positions
-#########################################################################
-
-if 'ais_interpolation' in steps_to_run:
-    print("Running AIS interpolation")
-    # Store commands
-    ais_int_cmds = []
-    for t in config.tp:
-        cmd = utils.make_hourly_interpolation_table(
-            date = t,
-            pipeline_dataset = config.pipeline_dataset,
-            pipeline_table = config.pipeline_table,
-            destination_dataset = config.destination_dataset,
-            destination_table = config.ais_positions_hourly
-            )
-
-        ais_int_cmds.append(cmd)
-
-    # test query
-    if config.test_run:
-        test_cmd = ais_int_cmds[0].split('|')[0]
-        print(test_cmd)
-        os.system(test_cmd)
-
-    if config.test_run is False:
-        # Create tables if necessary
-        try:
-            utils.client.get_table(f"{config.destination_dataset}.{config.ais_positions_hourly}")
-            print(f"Table {config.destination_dataset}.{config.ais_positions_hourly} already exists")
-        except NotFound:
-            print(f"Table {config.destination_dataset}.{config.ais_positions_hourly} is not found.")
-            print(f"Creating table {config.destination_dataset}.{config.ais_positions_hourly}")
-            # create interpolated gap event positions table if needed
-            utils.make_bq_partitioned_table(config.destination_dataset, config.ais_positions_hourly)
-
-        # Run commands
-        utils.execute_commands_in_parallel(ais_int_cmds)
-
-#########################################################################
-# 2. Rasterize gaps
+# 1. Rasterize gaps
 #########################################################################
 
 if 'raster_gaps' in steps_to_run:
@@ -126,7 +52,7 @@ if 'raster_gaps' in steps_to_run:
         subprocess.run("bq query".split(), input=bytes(query, "utf-8"))
 
 #########################################################################
-# 3. Normalize rasterized gaps
+# 2. Normalize rasterized gaps
 #########################################################################
 
 if 'normalize_gaps' in steps_to_run:
@@ -148,7 +74,7 @@ if 'normalize_gaps' in steps_to_run:
         subprocess.run("bq query".split(), input=bytes(query, "utf-8"))
 
 #########################################################################
-# 4. Spatially allocate gaps
+# 3. Spatially allocate gaps
 #########################################################################
 
 #
@@ -204,7 +130,7 @@ if 'allocate_gaps_interpolate' in steps_to_run:
         subprocess.run("bq query".split(), input=bytes(query, "utf-8"))
 
 #########################################################################
-# 5. Spatially allocate fishing activity
+# 4. Spatially allocate fishing activity
 #########################################################################
 
 if 'grid_fishing' in steps_to_run:
