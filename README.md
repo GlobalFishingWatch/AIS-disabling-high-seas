@@ -1,4 +1,4 @@
-# Hotspots of unseen fishing
+# Hotspots of unseen fishing vessels
 
 Code to support the publication Welch, H. et al. "Hotspots of unseen fishing"  
 `[Placeholder for zendo DOI]`
@@ -31,19 +31,7 @@ Automatic Identification System (AIS) data are a powerful tool for tracking and 
 
 ## Data
 
-The input data (when possible) and results of this analysis are available in the `data/` subdirectory:
-
-```
-- data/
-  - ais_disabling_events/
-  - environmental_and_behavioural_drivers/
-```
-
-1. Intentional AIS disabling events. Are these going to be public? If so please provide file name and description and add to repository. If not please provide some availability statement like available by request to GFW.  
-
-2. Fisheries activity.  Are these going to be public? If so please provide file name and description and add to repository. If not please provide some availability statement like available by request to GFW.
-
-3. Environmental and behavioral drivers. Global rasters at .25 degrees resolution. Raster metadata is available in the supplementary materials.
+The input data (when possible) and results of this analysis are available on Global Fishing Watch's data download portal here: [https://globalfishingwatch.org/data-download/](https://globalfishingwatch.org/data-download/)
 
 ## Code
 
@@ -51,9 +39,9 @@ The code for this analysis is divided into multiple subdirectories to isolate da
 
 [analysis/](analysis/README.md): Scripts supporting the analysis of the AIS disabling model and events, reception quality, and time lost to AIS disabling.
 
-[data/](): Input data to the BRT models(?)
+[data/](): Input data to the BRT models
 
-[data_production/](data_production/README.md): Code and queries to produce datasets of AIS gaps, reception quality, and gridded fishing and loitering activity from GFW AIS data.
+[data_production/](data_production/README.md): Code and queries to produce datasets of AIS gaps, reception quality, and gridded fishing and loitering activity from GFW AIS data. **Note**: The raw AIS data inputs to this analysis can not be made public due to data licensing restrictions and so the code cannot be run externally.  
 
 [machine_learning/](machine_learning/README.md): Code pertaining to the boosted regression tree models.
 
@@ -61,10 +49,10 @@ The code for this analysis is divided into multiple subdirectories to isolate da
 
 ### Analysis pipeline:
 
-1. Generate AIS gap events and reception quality datasets
+1. Generate AIS-based input datasets, including gap events, reception quality, and fishing vessel activity and loitering activity
 2. Create labeled training dataset of AIS disabling events
 3. AIS disabling model selection
-4. Boosted regression tree modelling.
+4. Boosted regression tree modeling
 5. Additional analyses.
 
 ## Relevant papers

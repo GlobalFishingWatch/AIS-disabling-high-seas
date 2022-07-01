@@ -31,6 +31,9 @@ create_tables = True
 start_date = date(2017,1, 1)
 end_date = date(2019,12, 31)
 
+# Min gap hours in raw gaps table
+min_gap_hours = 6
+
 ###############################################
 # Dates to run
 ###############################################
@@ -78,7 +81,6 @@ off_events_table = f'ais_off_events_{output_version}'
 on_events_table = f'ais_on_events_{output_version}'
 gap_events_table = f'ais_gap_events_{output_version}'
 gap_events_features_table = f'ais_gap_events_features_{output_version}'
-gap_events_labeled_table = f'ais_gap_events_labeled_{output_version}'
 
 # Loitering
 loitering_events_table = f'loitering_events_{output_version}'
@@ -103,8 +105,6 @@ raster_gaps_norm_table = f'raster_gaps_norm_{output_version}'
 gaps_allocated_raster_table = f'gaps_allocated_raster_{output_version}'
 gaps_allocated_interpolate_table = f'gaps_allocated_interpolate_{output_version}'
 fishing_allocated_table = f'fishing_activity_{output_version}'
-pipe_static_distance_from_shore = 'pipe_static.distance_from_shore'
-gap_positions_hourly = f'gap_positions_hourly_{output_version}'
 
 ###############################################
 # Coordinate defaults for plotting functions
