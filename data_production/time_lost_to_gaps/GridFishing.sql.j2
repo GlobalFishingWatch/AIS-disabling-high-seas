@@ -1,0 +1,79 @@
+#standardSQL
+--
+-- TABLE DEFINITION
+--
+  create table
+     `{{ destination_dataset }}.{{ output_table }}`
+  cluster by
+  vessel_class,
+  flag,
+  over_200_nm
+  AS
+--
+-- QUERY
+--
+WITH
+--
+-- Fishing vessels list
+--
+fishing_vessels AS (
+  SELECT
+    ssvid,
+    year,
+    vessel_class,
+    best_flag as flag
+  FROM `{{ destination_dataset }}.{{ fishing_vessels_table }}`
+),
+--
+--
+--
+positions AS (
+  SELECT
+    lat,
+    lon,
+    vessel_class,
+    flag,
+    hours,
+    IF(vessel_class = 'squid_jigger', night_loitering, nnet_score) as fishing_score,
+    distance_from_shore_m > 200*1852 over_200_nm,
+    if(hours<12, hours, 0) hours_in_gaps_under_12,
+    if(hours>=12, hours, 0) hours_in_gaps_over_12,
+  FROM `{{ pipeline_dataset }}.{{ pipeline_table }}` a
+  JOIN fishing_vessels b
+  ON
+    a.ssvid = b.ssvid
+    AND extract(year from a._partitiontime) = b.year
+  WHERE seg_id in (
+    SELECT seg_id
+    FROM `{{ pipeline_dataset }}.{{ segs_table }}`
+    WHERE good_seg
+    AND NOT overlapping_and_short
+  )
+  AND date(_partitiontime) BETWEEN "{{ start_date }}" and "{{ end_date }}"
+   -- only more than 50 nautical miles from shore
+  AND distance_from_shore_m > 1852*50
+),
+--
+-- Add is_fishing to positions
+--
+positions_with_fishing AS (
+  SELECT
+    * EXCEPT(fishing_score),
+    IFNULL(fishing_score > 0.5, false) as is_fishing
+  FROM positions
+)
+--
+-- Return gridded fishing table
+--
+SELECT
+  floor(lat*{{ scale }}) as lat_index,
+  floor(lon*{{ scale }}) as lon_index,
+  vessel_class,
+  flag,
+  over_200_nm,
+  sum(hours_in_gaps_over_12) as hours_in_gaps_over_12,
+  sum(hours_in_gaps_under_12) as hours_in_gaps_under_12,
+  sum(if(is_fishing, hours_in_gaps_over_12, 0)) as fishing_hours_in_gaps_over_12,
+  sum(if(is_fishing, hours_in_gaps_under_12, 0)) as fishing_hours_in_gaps_under_12
+FROM positions_with_fishing
+GROUP BY lat_index, lon_index, vessel_class, flag, over_200_nm

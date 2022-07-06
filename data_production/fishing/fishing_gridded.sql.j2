@@ -1,0 +1,172 @@
+/*
+Generate aggregate vessel presence, fishing activity, and
+number of fishing MMSI present per 0.25 degree grid cell
+over by month during the time period of analysis.
+*/
+--
+CREATE TEMP FUNCTION startdate() AS (DATE('{{ start_date }}'));
+CREATE TEMP FUNCTION enddate() AS (DATE('{{ end_date }}'));
+--
+WITH
+--
+  ########################################
+  # This subquery gets fishing vessels
+  fishing_vessels AS(
+  SELECT *
+  FROM gfw_research.fishing_vessels_ssvid_{{ vi_version }}
+  ),
+--
+  ############################################
+  # This subquery gets corrected squid jiggers
+  corrected_jiggers AS (
+  SELECT
+  ssvid,
+  year,
+  # Overwrite pole and line vessels as squid when registries say their squid
+  IF(best.registry_net_disagreement = 'squid_jigger,pole_and_line',
+     'squid_jigger', best.best_vessel_class) as vessel_class,
+  FROM `gfw_research.vi_ssvid_byyear_{{ vi_version }}`
+  WHERE best.registry_net_disagreement = 'squid_jigger,pole_and_line'
+  AND year BETWEEN EXTRACT(year FROM startdate()) AND EXTRACT(year FROM enddate())
+  ),
+--
+ ############################################
+ # Override best_vessel_class for corrected squid jiggers
+ corrected_fishing_vessels AS (
+  SELECT
+  ssvid,
+  year,
+  best_flag,
+  IF(vessel_class IS NULL, best_vessel_class, vessel_class) as best_vessel_class
+  FROM fishing_vessels
+  LEFT JOIN corrected_jiggers
+  USING(ssvid, year)
+ ),
+--
+  ########################################
+  # This subquery identifies good segments
+  good_segments AS (
+  SELECT
+    seg_id
+  FROM
+    {{ segs_table }}
+  WHERE good_seg
+  AND NOT overlapping_and_short
+    ),
+--
+  ########################################
+  # This subquery identifies transits
+  transits AS (
+    SELECT *
+    FROM gfw_research_precursors.transits_v20220510
+    WHERE DATE(timestamp) BETWEEN startdate() AND enddate()
+  ),
+--
+  #####################################################################
+  # This subquery fishing query gets all fishing within a date range
+  positions AS (
+  SELECT
+    a.ssvid,
+    (CASE
+        WHEN type IN ('AIS.1', 'AIS.2', 'AIS.3') THEN 'A'
+        WHEN type IN ('AIS.18','AIS.19') THEN 'B'
+        ELSE NULL
+     END
+   ) as class,
+    # Assign lat/lon bins at desired resolution (here quarter degree)
+    EXTRACT(date FROM _partitiontime) as date,
+    EXTRACT(year FROM _partitiontime) as year,
+    DATE(DATE_TRUNC(_partitiontime, MONTH)) as month,
+    FLOOR(lat * 4 ) as lat_bin,
+    FLOOR(lon * 4 ) as lon_bin,
+    hours,
+    nnet_score,
+    night_loitering,
+    b.ssvid IS NOT NULL as is_transit
+  FROM pipe_production_v20201001.research_messages a
+  LEFT JOIN transits b
+  ON(
+    a.ssvid = b.ssvid
+    AND a.msgid = b.msgid
+    AND a.seg_id = b.seg_id
+    AND DATE(a._partitiontime) = DATE(b.timestamp))
+  # Restrict query to date range
+  WHERE DATE(_partitiontime) BETWEEN startdate() AND enddate()
+  AND is_fishing_vessel
+  # Remove noisy points
+  AND lat >= -90
+  AND lat <= 90
+  AND lon >= -180
+  AND lon <= 180
+  # Use good_segments subquery to only include positions from good segments
+  AND a.seg_id IN (
+    SELECT
+      seg_id
+    FROM
+      good_segments)
+  ),
+--
+  #####################################################################
+  # This filters fishing positions to the list of fishing vessels
+  # and adds in vessel class and flag.
+  # Use night_loitering instead of nnet_score as indicator of fishing for squid jiggers
+  fishing_filtered AS (
+  SELECT
+    *,
+    IF(best_vessel_class = 'squid_jigger', night_loitering, nnet_score) as fishing_score
+  FROM positions
+  JOIN fishing_vessels
+  USING (ssvid, year)
+  ),
+--
+  ########################################################################
+  # Create fishing_hours attribute.
+  fishing AS (
+  SELECT
+  *,
+  IF(fishing_score > 0.5 AND NOT is_transit, hours, 0) as fishing_hours
+  FROM fishing_filtered
+  ),
+--
+  # Summarize by day to count distinct vessel fishing days
+  # per cell (defined as fishing for at least an hour in the cell)
+  fishing_days AS (
+  SELECT
+    ssvid,
+    best_vessel_class as vessel_class,
+    best_flag as flag,
+    date,
+    month,
+    lat_bin,
+    lon_bin,
+    class,
+    SUM(hours) as hours,
+    SUM(fishing_hours) as fishing_hours,
+    IF(SUM(hours) > 0, 1, 0) as vessel_day,
+    IF(SUM(fishing_hours) > 1, 1, 0) as fishing_day
+  FROM fishing
+  GROUP BY ssvid, vessel_class, flag, date, month, lat_bin, lon_bin, class
+  ),
+--
+  # Aggregate monthly data by 0.25 degree bin
+  all_fishing_binned AS (
+  SELECT
+    month,
+    CAST(lat_bin / 4 + 0.125 as NUMERIC) lat_bin,
+    CAST(lon_bin / 4 + 0.125 as NUMERIC) lon_bin,
+    vessel_class,
+    flag,
+    class,
+    SUM(hours) as hours,
+    SUM(fishing_hours) as fishing_hours,
+    COUNT(DISTINCT ssvid) as mmsi_present,
+    SUM(vessel_day) as vessel_days,
+    SUM(fishing_day) as fishing_days
+  FROM fishing_days
+  GROUP BY month, lat_bin, lon_bin, vessel_class, flag, class
+  )
+--
+# Return binned data
+SELECT *
+FROM all_fishing_binned
+ORDER BY month, lat_bin, lon_bin, vessel_class, flag, class

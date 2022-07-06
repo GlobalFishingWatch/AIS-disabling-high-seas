@@ -16,10 +16,8 @@ DEPENDENCIES:
   - To properly calculate all gaps, it must have off and on events data
   run for every day up to and including today.
   - Input tables
-    - off_events_table (currently gfw_research_precursors.ais_off_events
-    but needs to be replaced and versioned)
-    - on_events_table (currently gfw_research_precursors.ais_on_events
-    but needs to replaced and versioned)
+    - off_events_table
+    - on_events_table
   - Input parameters (see jinja2 parameter list above)
 ##################################################################
 */
@@ -88,17 +86,17 @@ WITH
   /*
   Return only those events that are sequential
   e.g. first on event following the off event.
-  If there is no viable on event, then the off event 
+  If there is no viable on event, then the off event
   remains open and is_closed is set to 0.
   */
   gaps AS (
   SELECT
     *,
-    IF(on_timestamp IS NULL, 0, 1) is_closed
+    IF(on_timestamp IS NULL, False, True) is_closed
   FROM events_join
   WHERE rank = 1
 ),
-  
+
   /*
    Calculate gap features:
    - gap id (MD5 hash of ssvid, off_timestamp, off_lat, and off_lon)
@@ -129,7 +127,7 @@ WITH
   FROM
     (SELECT
       *,
-      IF(is_closed = 1, TIMESTAMP_DIFF(on_timestamp, off_timestamp, MINUTE), TIMESTAMP_DIFF(end_of_today(), off_timestamp, MINUTE)) / 60 as gap_hours,
+      IF(is_closed IS True, TIMESTAMP_DIFF(on_timestamp, off_timestamp, MINUTE), TIMESTAMP_DIFF(end_of_today(), off_timestamp, MINUTE)) / 60 as gap_hours,
       ST_DISTANCE(ST_GEOGPOINT(off_lon, off_lat), ST_GEOGPOINT(on_lon, on_lat)) as gap_distance_m
     FROM gaps
     WHERE
@@ -158,8 +156,9 @@ SELECT
   gap_hours,
   gap_distance_m,
   gap_implied_speed_knots,
-  
+
   # Off event features
+  off_seg_id as gap_start_seg_id,
   off_msgid as gap_start_msgid,
   off_lat as gap_start_lat,
   off_lon as gap_start_lon,
@@ -169,10 +168,11 @@ SELECT
   off_receiver_type as gap_start_receiver_type,
   off_distance_from_shore_m as gap_start_distance_from_shore_m,
   off_distance_from_port_m as gap_start_distance_from_port_m,
-  off_eez as gap_start_eez,
+  off_eez_id as gap_start_eez,
   off_rfmo as gap_start_rfmo,
-  
+
   # On event features
+  on_seg_id as gap_end_seg_id,
   on_msgid as gap_end_msgid,
   on_lat as gap_end_lat,
   on_lon as gap_end_lon,
@@ -182,14 +182,19 @@ SELECT
   on_receiver_type as gap_end_receiver_type,
   on_distance_from_shore_m as gap_end_distance_from_shore_m,
   on_distance_from_port_m as gap_end_distance_from_port_m,
-  on_eez as gap_end_eez,
+  on_eez_id as gap_end_eez,
   on_rfmo as gap_end_rfmo,
-  
+
   # Classification model features
+  positions_6_hours_before,
   positions_12_hours_before,
+  positions_18_hours_before,
+  positions_24_hours_before,
+  positions_6_hours_before_sat,
   positions_12_hours_before_sat,
-  positions_12_hours_before_ter,
-  
+  positions_18_hours_before_sat,
+  positions_24_hours_before_sat,
+
   # Flag for if gap is closed
   is_closed
 FROM gaps_features

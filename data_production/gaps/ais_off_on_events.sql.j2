@@ -14,8 +14,8 @@ jinja2 PARAMS:
 DEPENDENCIES:
   - Must have AIS data for yesterday, today, and tomorrow
   - Input tables
-    - gfw_research.pipe_vYYYYMMDD (query was built on 20190502)
-    - gfw_research.pipe_vYYYYMMDD_segs (query was built on 20190502)
+    - pipe_production_v20201001.research_messages
+    - pipe_production_v20201001.research_segs
     - gfw_research.eez_info
   - Input parameters (see jinja2 parameter list above)
 ##################################################################
@@ -47,6 +47,7 @@ WITH
   source_table AS (
   SELECT
     ssvid,
+    seg_id,
     msgid,
     timestamp,
     lat,
@@ -61,18 +62,17 @@ WITH
   FROM
       `{{  pipeline_table  }}`
   {% if event == 'off' %}
-  WHERE DATE(date) >= today() AND DATE(date) <= tomorrow()
+  WHERE DATE(_partitiontime) >= today() AND DATE(_partitiontime) <= tomorrow()
   {% elif event == 'on' %}
-  WHERE DATE(date) <= today() AND DATE(date) >= yesterday()
+  WHERE DATE(_partitiontime) <= today() AND DATE(_partitiontime) >= yesterday()
   {% endif %}
   AND seg_id IN (
   SELECT
     seg_id
   FROM
     `{{  segs_table  }}`
-  WHERE
-    good_seg
-    and not overlapping_and_short)
+  WHERE good_seg
+  )
 ),
 
   /*
@@ -90,6 +90,7 @@ WITH
   positions AS (
   SELECT
     ssvid,
+    seg_id as {{event}}_seg_id,
     msgid as {{event}}_msgid,
     timestamp as {{event}}_timestamp,
     /* LAG/LEAD depending on event type */
@@ -115,7 +116,7 @@ WITH
     receiver_type as {{event}}_receiver_type,
     distance_from_shore_m as {{event}}_distance_from_shore_m,
     distance_from_port_m as {{event}}_distance_from_port_m,
-    regions.eez[SAFE_ORDINAL(1)] as {{event}}_eez,
+    regions.eez as {{event}}_eez_id,
     ARRAY_TO_STRING(regions.rfmo, ", ") as {{event}}_rfmo
   FROM
     source_table
@@ -176,16 +177,15 @@ WITH
     `{{  pipeline_table  }}`
   WHERE
     # Look back one day
-    DATE(date) >= yesterday() AND DATE(date) <= today()
+    DATE(_partitiontime) >= yesterday() AND DATE(_partitiontime) <= today()
     AND ssvid IN (SELECT ssvid FROM events)
     AND seg_id IN (
       SELECT
         seg_id
       FROM
         `{{  segs_table }}`
-      WHERE
-        good_seg
-        AND NOT overlapping_and_short) 
+      WHERE good_seg
+      )
 ),
 
   /*
@@ -193,45 +193,47 @@ WITH
   12 hours before gap start. Include all positions
   as well as a breakdown by satellite and terrestrial.
   */
-  twelve_hours_before AS (
-  SELECT
-    ssvid,
-    off_timestamp,
-    COUNT(*) positions_12_hours_before,
-    SUM(IF(receiver_type = 'terrestrial', 1,0)) as positions_12_hours_before_ter,
-    SUM(IF(receiver_type = 'satellite', 1,0)) as positions_12_hours_before_sat
-  FROM
-    events
-  JOIN
-    legit_position_messages
-  USING
-    (ssvid)
-  WHERE
-    timestamp BETWEEN TIMESTAMP_SUB(off_timestamp, INTERVAL 12 hour) AND off_timestamp
-  GROUP BY
-    ssvid,
-    off_timestamp
-)
+  positions_hours_before AS (
+    SELECT
+      ssvid,
+      off_timestamp,
+      # All positions
+      COUNTIF(timestamp BETWEEN TIMESTAMP_SUB(off_timestamp, INTERVAL 6 hour) AND off_timestamp) positions_6_hours_before,
+      COUNTIF(timestamp BETWEEN TIMESTAMP_SUB(off_timestamp, INTERVAL 12 hour) AND off_timestamp) positions_12_hours_before,
+      COUNTIF(timestamp BETWEEN TIMESTAMP_SUB(off_timestamp, INTERVAL 18 hour) AND off_timestamp) positions_18_hours_before,
+      COUNTIF(timestamp BETWEEN TIMESTAMP_SUB(off_timestamp, INTERVAL 24 hour) AND off_timestamp) positions_24_hours_before,
+      # Satellite positions
+      COUNTIF(
+        (timestamp BETWEEN TIMESTAMP_SUB(off_timestamp, INTERVAL 6 hour) AND off_timestamp)
+        AND receiver_type = 'satellite'
+        ) positions_6_hours_before_sat,
+      COUNTIF(
+        (timestamp BETWEEN TIMESTAMP_SUB(off_timestamp, INTERVAL 12 hour) AND off_timestamp)
+        AND receiver_type = 'satellite'
+      ) positions_12_hours_before_sat,
+      COUNTIF(
+        (timestamp BETWEEN TIMESTAMP_SUB(off_timestamp, INTERVAL 18 hour) AND off_timestamp)
+        AND receiver_type = 'satellite'
+      ) positions_18_hours_before_sat,
+      COUNTIF(
+        (timestamp BETWEEN TIMESTAMP_SUB(off_timestamp, INTERVAL 24 hour) AND off_timestamp)
+        AND receiver_type = 'satellite'
+      ) positions_24_hours_before_sat
+      FROM events
+      JOIN legit_position_messages
+        USING(ssvid)
+      GROUP BY ssvid, off_timestamp
+  )
 {% endif %}
 
 /*
-Add EEZ ISO3 and return final event table,
-joining with twelve_hours_before if off events.
+Return final event table,
+joining with positions before summary if off events.
 */
 SELECT
-  * EXCEPT(eez_id, {{event}}_eez, sovereign1_iso3),
-  sovereign1_iso3 as {{event}}_eez
-FROM events a
-LEFT JOIN (
-  SELECT
-    eez_id,
-    sovereign1_iso3
-  FROM `gfw_research.eez_info`
-  ) b
-ON(a.{{event}}_eez = CAST(b.eez_id AS STRING))
-{% if event == 'off' %}
+  *
+FROM events {% if event == 'off' %} a
 LEFT JOIN
-twelve_hours_before
+positions_hours_before
 USING (ssvid, off_timestamp)
 {% endif %}
-

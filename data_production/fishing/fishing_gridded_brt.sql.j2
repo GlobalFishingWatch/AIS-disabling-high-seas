@@ -1,0 +1,17 @@
+SELECT
+  month,
+  lat_bin,
+  lon_bin,
+  IF(vessel_class IN (
+      'trawlers',
+      'drifting_longlines',
+      'squid_jigger',
+      'tuna_purse_seines'
+      ), vessel_class, 'other'
+    ) as vessel_class,
+  SUM(hours) as hours,
+  SUM(fishing_hours) as fishing_hours,
+  SUM(mmsi_present) as mmsi_present,
+  SUM(fishing_days) as fishing_days
+FROM `{{ destination_dataset }}.{{ gridded_fishing_table }}`
+GROUP BY month, lat_bin, lon_bin, vessel_class

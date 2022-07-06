@@ -1,0 +1,59 @@
+#standardSQL
+--
+-- Query normalize each raster so that the number of hours
+-- is equal to the number of hours of each gap.
+--
+-- TABLE DEFINITION
+--
+CREATE OR REPLACE TABLE
+  {{ destination_dataset }}.{{ output_table }}
+AS
+--
+-- QUERY
+--
+WITH
+--
+-- Rasterized gaps table
+--
+source_table as (
+  SELECT *
+  FROM {{ destination_dataset}}.{{ raster_gaps_table }}
+),
+--
+--
+--
+grouped_table as (
+  SELECT
+    x,
+    y,
+    sum(hours) hours,
+    vessel_class,
+    hours_diff,days_to_start,
+    distance_km,
+    avg(dist_to_line_km) dist_to_line_km,
+    avg(dist_to_start_km) dist_to_start_km,
+    avg(dist_to_end_km) dist_to_end_km
+  FROM source_table
+  GROUP BY x, y, vessel_class, hours_diff, days_to_start, distance_km
+),
+--
+--
+tot_hours_table as (
+  SELECT
+    vessel_class,
+    hours_diff,
+    distance_km,
+    sum(hours) tot_hours
+  FROM grouped_table
+  GROUP BY vessel_class, hours_diff, distance_km
+)
+--
+--
+SELECT
+  * except(hours, tot_hours),
+  hours/tot_hours*hours_diff as hours,
+  cast(round(tot_hours/hours_diff) as int64) as tot_vessels
+FROM grouped_table
+JOIN
+tot_hours_table
+USING(vessel_class, hours_diff, distance_km)

@@ -1,0 +1,40 @@
+  #standardsql
+  WITH
+
+  #
+  # Get all loitering events for carrier vessels between {{ start_date }} and {{ end_date }}
+  # Minimum loitering time >= 4 hours, avg speed <= 2 knots, and
+  # average distance from shore >= 20 nm
+  #
+  loitering_events AS (
+  SELECT *
+  FROM {{ destination_dataset }}.loitering_events_{{ output_version }}),
+
+  #
+  # Bin distinct loitering events to quarter degree
+  #
+  loitering_binned AS (
+  SELECT
+    ssvid,
+    FLOOR(start_lat * 4) lat_bin,
+    FLOOR(start_lon * 4) lon_bin,
+    loitering_hours
+  FROM
+    loitering_events
+  WHERE DATE(loitering_start_timestamp) >= '{{ start_date }}' 
+  AND DATE(loitering_start_timestamp) <= '{{ end_date }}' 
+  )
+
+  #
+  # Aggregate by lat/lon bins and summarize events
+  #
+  SELECT
+    CAST(lat_bin / 4 + 0.125 AS NUMERIC) AS lat_bin,
+    CAST(lon_bin / 4 + 0.125 AS NUMERIC) AS lon_bin,
+    SUM(loitering_hours) AS loitering_hours,
+    COUNT(*) AS loitering_events
+  FROM
+    loitering_binned
+  GROUP BY
+    lat_bin,
+    lon_bin
