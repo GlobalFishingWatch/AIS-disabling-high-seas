@@ -1,7 +1,8 @@
 # Hotspots of unseen fishing vessels
 
-Code to support the publication Welch, H. et al. "Hotspots of unseen fishing"  
-`[Placeholder for zendo DOI]`
+Code to support the publication Welch, H. et al. "Hotspots of unseen fishing vessels"
+
+[![DOI](https://zenodo.org/badge/339832616.svg)](https://zenodo.org/badge/latestdoi/339832616)
 
 ## Overview
 Automatic Identification System (AIS) data are a powerful tool for tracking and monitoring fishing vessels. However, AIS devices can be intentionally disabled, reducing the efficacy of AIS as a monitoring tool. The purpose of this repository is to archive the scripts used in Welch et al. 2022 in order to 1. identify intentional disabling events, 2. estimate activity obscured by intentional disabling events, and 3. fit and validate boosted regression tree models to identify the drivers of intentional AIS disabling events.
