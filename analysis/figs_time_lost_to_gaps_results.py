@@ -53,7 +53,7 @@ SCALE = 1 # Rasters are at one-degree
 A_VMIN = 0.02
 A_VMAX = 10
 LAND_SCALE = '110m'
-OCEANS_CENTERED_PROJ = cartopy.crs.EqualEarth(central_longitude=-80)
+BALANCED_PACIFIC_ATLANTIC_PROJECTION = cartopy.crs.EqualEarth(central_longitude=-80)
 
 
 # Bivariate color map
@@ -607,8 +607,8 @@ def time_lost_to_gaps_results_figures(figures_folder):
     reception[reception>5] = 1
 
     # GENERATE FIGURES
-    fraction_disabling_all(total_activity_interp_2w, frac_time_lost_interp_2w, reception, projection=OCEANS_CENTERED_PROJ, figures_folder=figures_folder)
-    fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_under_12_hours, df_activity_under_12_hours_byflag, reception, projection=OCEANS_CENTERED_PROJ, figures_folder=figures_folder)
+    fraction_disabling_all(total_activity_interp_2w, frac_time_lost_interp_2w, reception, projection=BALANCED_PACIFIC_ATLANTIC_PROJECTION, figures_folder=figures_folder)
+    fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_under_12_hours, df_activity_under_12_hours_byflag, reception, projection=BALANCED_PACIFIC_ATLANTIC_PROJECTION, figures_folder=figures_folder)
     spatial_allocation_comparison(total_activity_interp_2w, frac_time_lost_interp_2w, total_activity_interp, frac_time_lost_interp, total_activity_raster_2w, frac_time_lost_raster_2w, total_activity_raster, frac_time_lost_raster, reception, figures_folder=figures_folder)
 
 
