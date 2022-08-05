@@ -8,7 +8,7 @@
 
 **figs_justify_12_hour_gaps_sats.py**:
 
-**figs_model_selection.py**: Generates all model selection figures. See `model_selection/README.md` for how to get the data for the final model for the paper so this will run correctly. To run: `python figs_model_selection --lowest_rec 10 --run_double True`
+**figs_model_selection.py**: Generates all model selection figures. See `model_selection/README.md` for how to get the data for the final model for the paper so this will run correctly. To run: `python -m figs_model_selection --lowest_rec 10 --run_double True`
 
 **figs_reception_quality.py**:
 

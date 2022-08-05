@@ -1,12 +1,13 @@
 # Hotspots of unseen fishing vessels
 
-Code to support the publication Welch, H. et al. "Hotspots of unseen fishing"  
-`[Placeholder for zendo DOI]`
+Code to support the publication Welch, H. et al. "Hotspots of unseen fishing vessels"
+
+[![DOI](https://zenodo.org/badge/339832616.svg)](https://zenodo.org/badge/latestdoi/339832616)
 
 ## Overview
 Automatic Identification System (AIS) data are a powerful tool for tracking and monitoring fishing vessels. However, AIS devices can be intentionally disabled, reducing the efficacy of AIS as a monitoring tool. The purpose of this repository is to archive the scripts used in Welch et al. 2022 in order to 1. identify intentional disabling events, 2. estimate activity obscured by intentional disabling events, and 3. fit and validate boosted regression tree models to identify the drivers of intentional AIS disabling events.
 
-**Code authors:** Heather Welch (UCSC/NOAA), Tyler Clavelle (GFW), Jennifer Van Osdel (GFW), David Kroodsma (GFW). Add your names!  
+**Code authors:** Heather Welch (UCSC/NOAA), Tyler Clavelle (GFW), Jennifer Van Osdel (GFW), David Kroodsma (GFW).
 
 ### Repository structure
 
@@ -43,7 +44,7 @@ The code for this analysis is divided into multiple subdirectories to isolate da
 
 [data_production/](data_production/README.md): Code and queries to produce datasets of AIS gaps, reception quality, and gridded fishing and loitering activity from GFW AIS data. **Note**: The raw AIS data inputs to this analysis can not be made public due to data licensing restrictions and so the code cannot be run externally.  
 
-[machine_learning/](machine_learning/README.md): Code pertaining to the boosted regression tree models.
+[boosted_regression_trees/](boosted_regression_trees/README.md): Code pertaining to the boosted regression tree models.
 
 [model_selection/](model_selection/README.md): Code pertaining to the development of a labeled training dataset of AIS disabling events and the model selection process for choosing an AIS disabling model.
 

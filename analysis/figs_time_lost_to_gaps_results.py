@@ -8,6 +8,7 @@ import matplotlib.colors as mpcolors
 import matplotlib as mpl
 import pandas as pd
 import matplotlib.patches as mpatches
+import cartopy
 
 import pyseas
 pyseas._reload()
@@ -52,6 +53,8 @@ SCALE = 1 # Rasters are at one-degree
 A_VMIN = 0.02
 A_VMAX = 10
 LAND_SCALE = '110m'
+BALANCED_PACIFIC_ATLANTIC_PROJECTION = cartopy.crs.EqualEarth(central_longitude=-80)
+
 
 # Bivariate color map
 BLUE_RED_CMAP = mpcolors.LinearSegmentedColormap.from_list("blue_red", 
@@ -78,7 +81,7 @@ def generate_rect(ax, lon_min, lon_max, lat_min, lat_max,):
 
     rect = mpatches.Polygon(
         xy,
-        linewidth=1.5,
+        linewidth=2,
         edgecolor="#3c3c3b",
         facecolor="none",
         zorder=1
@@ -86,8 +89,8 @@ def generate_rect(ax, lon_min, lon_max, lat_min, lat_max,):
     
     return rect
 
-def map_bivariate(grid_total, grid_ratio, gs=None, title=None, label=None, number=None, 
-                  vmax=0.2, a_vmin=0.1, a_vmax=10, l_vmin=None, l_vmax=None, 
+def map_bivariate(grid_total, grid_ratio, gs=None, projection=None, title=None, label=None,
+                  number=None, vmax=0.2, a_vmin=0.1, a_vmax=10, l_vmin=None, l_vmax=None, 
                   land_scale='10m', yticks=None, bboxes=None, add_cbar=False):
     '''
     Bivariate map that assumes it's mapping total vessel activity against 
@@ -123,13 +126,17 @@ def map_bivariate(grid_total, grid_ratio, gs=None, title=None, label=None, numbe
     cmap = psm.bivariate.TransparencyBivariateColormap(BLUE_RED_CMAP, transmap=transmap)
     
     with psm.context(psm.styles.light):
-        
+
+        kwargs = {}
         if gs:
-            ax = psm.create_map(gs)
-        else:
+            kwargs['subplot'] = gs
+        if projection:
+            kwargs['projection'] = projection
+
+        if not gs:
             fig = plt.figure(figsize=(15, 15))
-            ax = psm.create_map()
-            
+        ax = psm.create_map(**kwargs)
+
         ax.background_patch.set_fill(False)
         psm.add_land(ax, facecolor="#C2CDE0", scale=land_scale,
                      edgecolor=tuple(np.array((0x16, 0x3F, 0x89, 127)) / 255),
@@ -177,7 +184,7 @@ def map_bivariate(grid_total, grid_ratio, gs=None, title=None, label=None, numbe
                 
         return ax
 
-def fraction_disabling_all(total_activity_interp_2w, frac_time_lost_interp_2w, reception, figures_folder=None):
+def fraction_disabling_all(total_activity_interp_2w, frac_time_lost_interp_2w, reception, projection=None, figures_folder=None):
     # Both the grid of total activity and the grid of the fraction of time lost to gaps are masked by reception to exclude areas of reception <= 5. Due to the bivariate nature of the figure, vessel activity in these areas of low reception implies that there is a lot of vessel activity and no intentional disabling gaps. In reality, we simply can't say anything about the gaps in that area. Therefore, we exclude these areas from the figure using the average reception for A class devices. Future work could include more sophisticated reception filtering that matches the gaps model where vessel activity is excluded by the reception for it's vessel type during that particular month.
     fig = plt.figure()
     # Bivariate using interpolation
@@ -206,15 +213,22 @@ def fraction_disabling_all(total_activity_interp_2w, frac_time_lost_interp_2w, r
     # NW Pacific 2
     bbox_NWP2 = (-180, -150, 50, 70)
     bboxes = [bbox_ARG, bbox_NWP, bbox_WA, bbox_NWP2]
-            
-    ax = map_bivariate(grid_total, grid_ratio, a_vmin=A_VMIN, a_vmax=A_VMAX, bboxes=bboxes, add_cbar=True, land_scale=LAND_SCALE)
+
+    kwargs = {}
+    if projection:
+        kwargs['projection'] = projection
+    ax = map_bivariate(grid_total, grid_ratio, a_vmin=A_VMIN, a_vmax=A_VMAX, bboxes=bboxes, add_cbar=True, land_scale=LAND_SCALE, **kwargs)
     if figures_folder:
         plt.savefig(f"{figures_folder}/fig1_fraction_disabling_all_2w.png", dpi=300, bbox_inches = 'tight')
     return fig
 
-def fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_under_12_hours, df_activity_under_12_hours_byflag, reception, figures_folder=None):
+def fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_under_12_hours, df_activity_under_12_hours_byflag, reception, projection=None, figures_folder=None):
     fig = plt.figure(figsize=(15, 15))
     gs = fig.add_gridspec(4,2, wspace=0.0, hspace=0.1)
+
+    kwargs = {}
+    if projection:
+        kwargs['projection'] = projection
 
     # BY VESSEL CLASS
     vessel_classes = [('A', 'tuna_purse_seines', 'Tuna purse seines'),
@@ -259,7 +273,8 @@ def fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_un
         grid_ratio = (disabling_gaps_activity_2w / total_activity_2w) * reception.copy()
 
         map_bivariate(grid_total, grid_ratio, label=vessel_class_label, number=number, 
-                    gs=gs[i,0], a_vmin=A_VMIN, a_vmax=A_VMAX, land_scale=LAND_SCALE)
+                    gs=gs[i,0], a_vmin=A_VMIN, a_vmax=A_VMAX, land_scale=LAND_SCALE,
+                    **kwargs)
 
         
     # BY FLAG
@@ -305,7 +320,8 @@ def fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_un
         grid_ratio = (disabling_gaps_activity_2w / total_activity_2w) * reception.copy()
 
         ax = map_bivariate(grid_total, grid_ratio, label=flag_label, number=number, 
-                        gs=gs[i,1], a_vmin=A_VMIN, a_vmax=A_VMAX, land_scale=LAND_SCALE)
+                        gs=gs[i,1], a_vmin=A_VMIN, a_vmax=A_VMAX, land_scale=LAND_SCALE,
+                        **kwargs)
         
 
     # Add one color bar for entire figure.
@@ -591,8 +607,8 @@ def time_lost_to_gaps_results_figures(figures_folder):
     reception[reception>5] = 1
 
     # GENERATE FIGURES
-    fraction_disabling_all(total_activity_interp_2w, frac_time_lost_interp_2w, reception, figures_folder=figures_folder)
-    fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_under_12_hours, df_activity_under_12_hours_byflag, reception, figures_folder=figures_folder)
+    fraction_disabling_all(total_activity_interp_2w, frac_time_lost_interp_2w, reception, projection=BALANCED_PACIFIC_ATLANTIC_PROJECTION, figures_folder=figures_folder)
+    fraction_disabling_by_class_flag(df_interp, df_interp_byflag, df_activity_under_12_hours, df_activity_under_12_hours_byflag, reception, projection=BALANCED_PACIFIC_ATLANTIC_PROJECTION, figures_folder=figures_folder)
     spatial_allocation_comparison(total_activity_interp_2w, frac_time_lost_interp_2w, total_activity_interp, frac_time_lost_interp, total_activity_raster_2w, frac_time_lost_raster_2w, total_activity_raster, frac_time_lost_raster, reception, figures_folder=figures_folder)
 
 
