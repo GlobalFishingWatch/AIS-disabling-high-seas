@@ -60,7 +60,7 @@ The code for this analysis is divided into multiple subdirectories to isolate da
 
 ## Data
 
-The [data/](data/) folder of this repo contains the final dataset of AIS disabling events (`disabling_events.zip`) presented in Welch et al. (2022). Additionally, data will be made available on the Global Fishing Watch Data Download Portal ([https://globalfishingwatch.org/data-download/])(https://globalfishingwatch.org/data-download/).
+The [data/](data/) folder of this repo contains the final dataset of AIS disabling events (`disabling_events.zip`) presented in Welch et al. (2022). Additionally, data will be made available on the Global Fishing Watch Data Download Portal (https://globalfishingwatch.org/data-download/).
 
 ## Relevant papers
 
