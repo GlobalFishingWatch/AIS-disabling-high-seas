@@ -19,7 +19,7 @@ warnings.filterwarnings("ignore")
 def gbq(q):
     return pd.read_gbq(q, project_id="world-fishing-827")
 
-queries_folder = 'time_lost_to_gaps/queries'
+queries_folder = 'queries'
 
 figures_folder = 'figures'
 figures_folder_precursors = f'{figures_folder}/precursors'
@@ -37,7 +37,7 @@ from ais_disabling.config import (
     min_distance_from_shore_m,
     tp,
     proj_dataset,
-    gap_events_features_table, 
+    gap_events_features_table,
     fishing_vessels_table,
     raster_gaps_norm_table,
     pipe_static_distance_from_shore,
@@ -64,13 +64,13 @@ def probability_raster(days, distance_km):
     vessel_class,
     hours_diff,
     distance_km
-    from 
+    from
     proj_ais_gaps_catena.raster_gaps_norm_v20211021
     where distance_km = {distance_km}
     and hours_diff = {days}*24
     and vessel_class not in ('tug','cargo_or_tanker')
     '''
-    
+
     return gbq(q)
 
 
@@ -94,10 +94,10 @@ def plot_probability_raster(df_raster, days, distance_km, vmin=.001, vmax=1,
             pass
 
 
-    vessel_classes = [('drifting_longlines', 'Drifting longlines'), 
-                      ('trawlers', 'Trawlers'), 
-                      ('squid_jigger', 'Squid jiggers'), 
-                      ('purse_seines', 'Tuna purse seines'), 
+    vessel_classes = [('drifting_longlines', 'Drifting longlines'),
+                      ('trawlers', 'Trawlers'),
+                      ('squid_jigger', 'Squid jiggers'),
+                      ('purse_seines', 'Tuna purse seines'),
                       ('other', 'Other')]
     for i, (vessel_class, title) in enumerate(vessel_classes):
 
@@ -110,14 +110,14 @@ def plot_probability_raster(df_raster, days, distance_km, vmin=.001, vmax=1,
 
     axs.format(
         abc=False, titleloc='l',
-        xlabel='km', ylabel='km', 
+        xlabel='km', ylabel='km',
         suptitle=f'{distance_km} km, {days} days',
         rc_kw={'suptitle.pad': -0.1, 'suptitle.size': 16}
     )
     fig.colorbar(cbar, loc='b', label='hours')
-    
+
     axs[0].text(-0.2, 1.2, fig_label, ha='left', va='top', transform=axs[0].transAxes, fontweight='bold', fontsize=16)
-    
+
     if figures_folder:
         plt.savefig(f"{figures_folder_precursors}/S15_probability_raster_{distance_km}km_{days}days.png", dpi=300, bbox_inches = 'tight')
 
@@ -152,7 +152,7 @@ def join_images(*rows, bg_color=(0, 0, 0, 0), alignment=(0.5, 0.5)):
             y = sum(heights[:i]) + int((heights[i] - image.height) * alignment[1])
             x = sum(widths[:j]) + int((widths[j] - image.width) * alignment[0])
             tmp.paste(image, (x, y))
-    
+
     return tmp
 
 
@@ -176,11 +176,11 @@ def probability_rasters(figures_folder=None):
   img_14days = f"{figures_folder_precursors}/S15_probability_raster_{distance_km}km_14days.png"
   img_30days = f"{figures_folder_precursors}/S15_probability_raster_{distance_km}km_30days.png"
 
-  images = [[Image.open(img_2days), Image.open(img_8days)], 
+  images = [[Image.open(img_2days), Image.open(img_8days)],
             [Image.open(img_14days), Image.open(img_30days)]]
 
   joined_image = join_images(*images)
-  
+
   if figures_folder:
     joined_image.save(f"{figures_folder}/S15_probability_raster_{distance_km}km_all.png", format='png')
   return joined_image
@@ -225,7 +225,7 @@ def get_gap_rasters(gap_id):
     SELECT  ssvid,vessel_class,
     gap_hours, gap_distance_m/1000 as gap_distance_km,
     from `{TABLE_GAPS_FEATURES}`
-    WHERE gap_id = "{gap_id}" 
+    WHERE gap_id = "{gap_id}"
   '''
 
   dfr = gbq(q_raster_template)
@@ -234,13 +234,13 @@ def get_gap_rasters(gap_id):
 
   gap_raster = psm.rasters.df2raster(dfr,
                                   'lon_index', 'lat_index',
-                                  'gap_hours', xyscale=SCALE, 
+                                  'gap_hours', xyscale=SCALE,
                                   per_km2=True, origin = 'lower')
   gap_interpolate = psm.rasters.df2raster(dfi,
                                   'lon_index', 'lat_index',
-                                  'gap_hours', xyscale=SCALE, 
+                                  'gap_hours', xyscale=SCALE,
                                   per_km2=True, origin = 'lower')
-  
+
   return dfg, gap_raster, gap_interpolate
 
 
@@ -250,7 +250,7 @@ def map_gap_raster(raster, extent, gs, norm, cmap='fishing', colorbar_label='hou
             with plt.rc_context({
                         "axes.spines.right": False,
                         "axes.spines.top": False,
-                        'legend.fontsize': 12, 
+                        'legend.fontsize': 12,
             }):
                 ax = psm.create_map(gs, extent=extent)
                 im = psm.add_raster(raster, ax=ax,
@@ -259,11 +259,11 @@ def map_gap_raster(raster, extent, gs, norm, cmap='fishing', colorbar_label='hou
                                 origin='lower'
                                 )
                 psm.add_land()
-                cb = psm.colorbar.add_colorbar(im, ax=ax, label=colorbar_label, format='%.1f', 
+                cb = psm.colorbar.add_colorbar(im, ax=ax, label=colorbar_label, format='%.1f',
                                                loc='bottom', right_edge=0.9, hspace=0.05, wspace=0.05)
                 ax.spines['geo'].set_visible(False)
                 ax.text(-0.08, 1.08, subplot_label, ha='left', va='top', transform=ax.transAxes, fontweight='bold', fontsize=14)
-    
+
     return ax
 
 def spatially_allocated_gaps(figures_folder=None):
@@ -305,11 +305,11 @@ def spatially_allocated_gaps(figures_folder=None):
 
   ax_a.text(0.5,1.2, 'Linear Interpolation Method', ha='center', va='top', fontsize=14, transform=ax_a.transAxes)
   ax_b.text(0.5,1.2, 'Raster Method', ha='center', va='top', fontsize=14, transform=ax_b.transAxes)
-  ax_a.text(-0.3,0.5, f'{round(gap_info_1.iloc[0].gap_hours)} hours\n{round(gap_info_1.iloc[0].gap_distance_km)}km', 
+  ax_a.text(-0.3,0.5, f'{round(gap_info_1.iloc[0].gap_hours)} hours\n{round(gap_info_1.iloc[0].gap_distance_km)}km',
             ha='center', va='center', fontsize=14, transform=ax_a.transAxes)
-  ax_c.text(-0.2,0.5, f'{round(gap_info_2.iloc[0].gap_hours)} hours\n{round(gap_info_2.iloc[0].gap_distance_km)}km', 
+  ax_c.text(-0.2,0.5, f'{round(gap_info_2.iloc[0].gap_hours)} hours\n{round(gap_info_2.iloc[0].gap_distance_km)}km',
             ha='center', va='center', fontsize=14, transform=ax_c.transAxes)
-  ax_e.text(-0.25,0.5, f'{round(gap_info_3.iloc[0].gap_hours)} hours\n{round(gap_info_3.iloc[0].gap_distance_km)}km', 
+  ax_e.text(-0.25,0.5, f'{round(gap_info_3.iloc[0].gap_hours)} hours\n{round(gap_info_3.iloc[0].gap_distance_km)}km',
             ha='center', va='center', fontsize=14, transform=ax_e.transAxes)
 
   if figures_folder:

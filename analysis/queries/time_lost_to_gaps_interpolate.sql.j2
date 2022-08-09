@@ -1,0 +1,48 @@
+with
+vessel_info AS (
+select 
+  ssvid, 
+  year,
+  best_vessel_class AS vessel_class,
+  best_flag AS flag
+from `{{TABLE_FISHING_VESSELS}}`
+),
+
+real_gaps as
+(
+select distinct gap_id
+from
+  `{{TABLE_GAPS_FEATURES}}`
+{{GAP_FILTERS}}
+)
+
+select
+floor(a.lat*{{SCALE}}) lat_index,
+floor(a.lon*{{SCALE}}) lon_index,
+vessel_class,
+flag,
+gap_hours > 7*24 over_one_week,
+gap_hours > 14*24 over_two_weeks,
+gap_hours > 7*24*4 over_four_weeks,
+b.distance_from_shore_m > 1852*200 over_200_nm,
+d.gap_id is not null is_real_gap,
+b.distance_from_shore_m > 1852*50 as over_50nm,
+count(*) gap_hours
+from `{{TABLE_GAPS_POSITIONS_HOURLY}}` a
+join
+vessel_info c
+on a.ssvid = c.ssvid
+and extract(year from a._partitiontime) = c.year
+JOIN
+  `{{TABLE_DISTANCE_FROM_SHORE}}` b
+ON
+  cast( (a.lat*100) as int64) = cast( (b.lat*100) as int64)
+  AND cast((a.lon*100) as int64) =cast(b.lon*100 as int64)
+left join real_gaps d
+using(gap_id)
+where
+(date(gap_start) >= '{{START_DATE}}' and date(gap_end) <= '{{END_DATE}}')
+and gap_hours >= {{MIN_GAP_HOURS}}
+and gap_id = '{{GAP_ID}}'
+group by lat_index, lon_index, vessel_class, is_real_gap, over_200_nm, flag, over_50nm,
+over_one_week, over_four_weeks, over_two_weeks

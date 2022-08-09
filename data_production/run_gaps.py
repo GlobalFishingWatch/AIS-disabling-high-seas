@@ -178,43 +178,6 @@ os.system(test_cmd)
 # Run queries
 utils.execute_commands_in_parallel(commands=on_cmds)
 
-# Check for dates that did not complete properly and re-run.
-
-# %%bigquery missing_on_dates
-WITH
---
-on_dates AS (
-  SELECT
-    DISTINCT _partitiontime as dates,
-    'on_events' as event
-  FROM `world-fishing-827.proj_ais_gaps_catena.ais_on_events_v20220606`
-),
---
-all_dates AS (
-  SELECT
-  GENERATE_DATE_ARRAY('2017-01-01', '2019-12-31', INTERVAL 1 DAY) as dates
-)
---
-SELECT
-  dates
-FROM all_dates, UNNEST(dates) as dates
-WHERE dates NOT IN (
-  SELECT DATE(dates) FROM on_dates
-)
-
-for d in missing_on_dates['dates']:
-    print(str(d))
-    cmd = utils.make_ais_events_table(
-        pipeline_table="{}.{}".format(pipeline_dataset, pipeline_table),
-        segs_table="{}.{}".format(pipeline_dataset, segs_table),
-        event_type='on',
-        date = str(d),
-        min_gap_hours = min_gap_hours,
-        precursors_dataset=destination_dataset,
-        destination_table=on_events_table
-    )
-    os.system(cmd)
-
 # ### Gap events
 #
 # Combine off and on events into gap events.
@@ -420,46 +383,6 @@ for r in reception_dates:
                                  reception_df = month_reception
                             )
 
-
-# ### Alternate reception quality
-
-# +
-# Create tables for alternate speed reception quality
-sat_reception_measured_all_speeds_tbl = 'sat_reception_measured_one_degree_all_speeds_{}'.format(output_version)
-sat_reception_smoothed_all_speeds_tbl = 'sat_reception_smoothed_one_degree_all_speeds_{}'.format(output_version)
-
-if create_tables:
-    # measured reception quality
-    utils.make_bq_partitioned_table(destination_dataset, sat_reception_measured_all_speeds_tbl)
-    utils.make_bq_partitioned_table(destination_dataset, sat_reception_smoothed_all_speeds_tbl)
-# -
-
-# Generate commands
-mr_all_speed_cmds = []
-for r in reception_dates:
-#     print(str(r.date()))
-    cmd = utils.make_reception_measured_table(destination_table = sat_reception_measured,
-                                        destination_dataset = destination_dataset,
-                                        start_date = r,
-                                        vi_version = vi_version,
-                                        segs_table="{}.{}".format("gfw_research", segs_table),
-                                        output_version = output_version,
-                                        include_all_speeds = "True")
-
-    mr_all_speed_cmds.append(cmd)
-
-# Run commands
-utils.execute_commands_in_parallel(mr_all_speed_cmds)
-
-for r in reception_dates[8:]:
-    print(str(r.date()))
-    utils.make_smooth_reception_table(start_date = r,
-                                      reception_measured_table = sat_reception_measured_all_speeds_tbl,
-                                      destination_dataset = destination_dataset,
-                                      destination_table = sat_reception_smoothed_all_speeds_tbl)
-
-reception_dates[8:]
-
 # ## Final gap events table
 #
 # Create the final gap events table that is used as an input to the model of suspected drivers of AIS disabling. This table takes the `ais_gap_events_vYYYYMMDD` table created above and adds a handful of additional model features, including the smoothed reception quality.
@@ -487,52 +410,6 @@ gap_features_cmd
 if create_tables:
     os.system(gap_features_cmd)
 
-# ## Reception quality excluding disabling events
-#
-# Calculate reception quality only after excluding suspected disabling events.
-
-# +
-# Create tables for alternate speed reception quality
-sat_reception_measured_no_disabling_tbl = 'sat_reception_measured_one_degree_no_disabling_{}'.format(output_version)
-sat_reception_smoothed_no_disabling_tbl = 'sat_reception_smoothed_one_degree_no_disabling_{}'.format(output_version)
-
-if create_tables:
-    # measured reception quality
-    utils.make_bq_partitioned_table(destination_dataset, sat_reception_measured_no_disabling_tbl)
-    utils.make_bq_partitioned_table(destination_dataset, sat_reception_smoothed_no_disabling_tbl)
-# -
-
-# Generate commands
-mr_no_disable_cmds = []
-for r in reception_dates:
-#     print(str(r.date()))
-    cmd = utils.make_reception_measured_table(destination_table = sat_reception_measured_no_disabling_tbl,
-                                        destination_dataset = destination_dataset,
-                                        start_date = r,
-                                        vi_version = vi_version,
-                                        segs_table="{}.{}".format("gfw_research", segs_table),
-                                        output_version = output_version,
-                                        include_all_speeds = "False",
-                                        exclude_disabling = "True")
-
-    mr_no_disable_cmds.append(cmd)
-
-# test query
-test_cmd = mr_no_disable_cmds[0].split('|')[0]
-os.system(test_cmd)
-
-# Run commands
-utils.execute_commands_in_parallel(mr_no_disable_cmds)
-
-# Smooth reception quality that excludes gaps.
-
-for r in reception_dates:
-    print(str(r.date()))
-    utils.make_smooth_reception_table(start_date = r,
-                                      reception_measured_table = sat_reception_measured_no_disabling_tbl,
-                                      destination_dataset = destination_dataset,
-                                      destination_table = sat_reception_smoothed_no_disabling_tbl)
-
 # # Copy Tables
 #
 # If needed, copy tables to a different BigQuery dataset.
@@ -550,7 +427,6 @@ tables_to_cp = [
     loitering_events_table,
     gridded_loitering_table,
     fishing_table,
-    ais_positions_hourly,
     sat_reception_measured,
     sat_reception_smoothed
 ]
@@ -571,59 +447,3 @@ if copy_tables:
         # Run command
         os.system(cp_cmd)
 # -
-
-# # Download data
-#
-# Download the following datasets for us in the model to identify drivers of suspected disabling:
-# + Gap events with features
-# + Loitering events
-# + Gridded fishing
-
-# Create results folder
-results_dir = "../results"
-# os.mkdir(results_dir)
-# Create folder for specific results version
-results_version_dir = os.path.join(results_dir, "gap_inputs_{}".format(output_version))
-print(results_version_dir)
-os.mkdir(results_version_dir)
-
-# %%bigquery gap_events_features_df
-SELECT *
-FROM `proj_ais_gaps_catena.ais_gap_events_features_v20220606`
-WHERE gap_hours >= 12
-AND gap_start < '2020-01-01'
-AND gap_end < '2020-01-01'
-
-gap_events_features_df.to_csv(f'{results_version_dir}/gap_events_features_{output_version}.zip',
-                              index = False,
-                              compression = dict(method='zip', archive_name=f'gap_events_features_{output_version}.zip')
-                             )
-
-# Download loitering events:
-
-# %%bigquery loitering_events_df
-SELECT *
-FROM proj_ais_gaps_catena.loitering_events_v20220301
-
-loitering_events_df.to_csv('{d}/loitering_events_{v}.csv'.format(d = results_version_dir,
-                                                                 v = output_version), index = False)
-
-# Gridded loitering
-
-# %%bigquery gridded_loitering_df
-SELECT *
-FROM proj_ais_gaps_catena.gridded_loitering_v20220301
-
-gridded_loitering_df.to_csv('{d}/loitering_quarter_degree_{v}_2017_to_2020.csv'.format(d = results_version_dir,
-                                                                                       v = output_version), index = False)
-
-# Download gridded fishing:
-
-# %%bigquery gridded_fishing_df
-SELECT *
-FROM proj_ais_gaps_catena.gridded_fishing_brt_v20220606
-
-gridded_fishing_df.to_csv(f'{results_version_dir}/vessel_presence_quarter_degree_{output_version}_2017_to_2019.zip',
-                          index = False,
-                          compression = dict(method='zip', archive_name=f'vessel_presence_quarter_degree_{output_version}_2017_to_2019.csv')
-                         )

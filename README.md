@@ -1,60 +1,66 @@
 # Hotspots of unseen fishing vessels
 
-Code to support the publication Welch, H. et al. "Hotspots of unseen fishing vessels"
+This repo contains code supporting the publication "Hotspots of unseen fishing vessels" by Welch et al. (2022)
 
 [![DOI](https://zenodo.org/badge/339832616.svg)](https://zenodo.org/badge/latestdoi/339832616)
 
 ## Overview
-Automatic Identification System (AIS) data are a powerful tool for tracking and monitoring fishing vessels. However, AIS devices can be intentionally disabled, reducing the efficacy of AIS as a monitoring tool. The purpose of this repository is to archive the scripts used in Welch et al. 2022 in order to 1. identify intentional disabling events, 2. estimate activity obscured by intentional disabling events, and 3. fit and validate boosted regression tree models to identify the drivers of intentional AIS disabling events.
+Automatic Identification System (AIS) data are a powerful tool for tracking and monitoring fishing vessels. However, AIS devices can be intentionally disabled, reducing the efficacy of AIS as a monitoring tool. The purpose of this repository is to archive the scripts used in Welch et al. (2022) to 1. identify intentional disabling events, 2. estimate activity obscured by intentional disabling events, and 3. fit and validate boosted regression tree models to identify the drivers of intentional AIS disabling events.
 
-**Code authors:** Heather Welch (UCSC/NOAA), Tyler Clavelle (GFW), Jennifer Van Osdel (GFW), David Kroodsma (GFW).
+**Code authors:** Heather Welch (UCSC/NOAA), Tyler Clavelle (GFW), Jennifer Van Osdel (GFW), David Kroodsma (GFW), Tim Hochberg (GFW).
 
 ### Repository structure
 
 ```
 - AIS-disabling-high-seas/
+  - ais_disabling/
   - analysis/
+  - boosted_regression_trees/
+    - functions/
+    - scripts_that_call_functions/
   - data/
-    - environmental_and_behavioural_drivers/
+    - [ INSERT GAPS DATASET ]
   - data_production/
     - fishing/
     - gaps/
     - interpolation/
+    - labeled_gaps/
     - loitering/
     - reception/
-  - machine_learning/
-    - functions/
-    - scripts_that_call_functions/
+    - time_lost_to_gaps/
+    - vessels/
   - model_selection/
     - labeled_dataset/
     - model_selection/
 ```
 
-## Data
-
-The input data (when possible) and results of this analysis are available on Global Fishing Watch's data download portal here: [https://globalfishingwatch.org/data-download/](https://globalfishingwatch.org/data-download/)
-
 ## Code
 
-The code for this analysis is divided into multiple subdirectories to isolate data production, modeling, and analysis code.
+The code for this analysis is divided into multiple subdirectories to isolate data production, modeling, and analysis code. **Note**: The raw AIS data inputs to this analysis can not be made public due to data licensing restrictions and, as a result, code cannot be run externally.
 
-[analysis/](analysis/README.md): Scripts supporting the analysis of the AIS disabling model and events, reception quality, and time lost to AIS disabling.
+[ais_disabling/](ais_disabling/): Python package containing utility functions and analysis configurations.
 
-[data/](): Input data to the BRT models
+[analysis/](analysis/): Scripts supporting the analysis and figure production of the AIS disabling model and events, reception quality, and time lost to AIS disabling.
 
-[data_production/](data_production/README.md): Code and queries to produce datasets of AIS gaps, reception quality, and gridded fishing and loitering activity from GFW AIS data. **Note**: The raw AIS data inputs to this analysis can not be made public due to data licensing restrictions and so the code cannot be run externally.  
+[boosted_regression_trees/](boosted_regression_trees/): Code pertaining to the boosted regression tree models.
 
-[boosted_regression_trees/](boosted_regression_trees/README.md): Code pertaining to the boosted regression tree models.
+[data/](data/): Final dataset of AIS disabling events (`disabling_events.zip`).
 
-[model_selection/](model_selection/README.md): Code pertaining to the development of a labeled training dataset of AIS disabling events and the model selection process for choosing an AIS disabling model.
+[data_production/](data_production/): Code and queries to produce datasets of AIS gaps, reception quality, gridded vessel activity (fishing and loitering) and time lost to AIS disabling from GFW AIS data.   
+
+[model_selection/](model_selection/): Code pertaining to the development of a labeled training dataset of AIS disabling events and the model selection process for choosing an AIS disabling model.
 
 ### Analysis pipeline:
 
-1. Generate AIS-based input datasets, including gap events, reception quality, and fishing vessel activity and loitering activity
+1. Generate AIS-based input datasets, including naive gap events, reception quality, and vessel activity (fishing and loitering)
 2. Create labeled training dataset of AIS disabling events
 3. AIS disabling model selection
 4. Boosted regression tree modeling
 5. Additional analyses.
+
+## Data
+
+The [data/](data/) folder of this repo contains the final dataset of AIS disabling events (`disabling_events.zip`) presented in Welch et al. (2022). Additionally, data will be made available on the Global Fishing Watch Data Download Portal ([https://globalfishingwatch.org/data-download/])(https://globalfishingwatch.org/data-download/).
 
 ## Relevant papers
 
