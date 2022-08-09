@@ -19,7 +19,6 @@ Automatic Identification System (AIS) data are a powerful tool for tracking and 
     - functions/
     - scripts_that_call_functions/
   - data/
-    - [ INSERT GAPS DATASET ]
   - data_production/
     - fishing/
     - gaps/
