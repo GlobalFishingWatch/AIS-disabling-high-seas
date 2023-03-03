@@ -14,11 +14,12 @@ def _reload():
     import importlib
 
     import ais_disabling
-    from ais_disabling import config, utils, model_utils, figure_utils, threshold_models
+    from ais_disabling import config, config_ole, utils, model_utils, figure_utils, threshold_models
 
     importlib.reload(ais_disabling)
     importlib.reload(utils)
     importlib.reload(config)
+    importlib.reload(config_ole)
     importlib.reload(model_utils)
     importlib.reload(figure_utils)
     importlib.reload(threshold_models)

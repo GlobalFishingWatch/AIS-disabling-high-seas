@@ -1,0 +1,64 @@
+#standardSQL
+
+CREATE OR REPLACE TABLE
+  `{{ destination_dataset }}.{{ destination_table }}`
+  PARTITION BY DATE(gap_start) 
+  AS
+
+WITH
+--
+-- This subquery gets the list of fishing vessels 
+-- with the condensed vessel classes.
+--
+fishing_vessels AS(
+  SELECT 
+    * EXCEPT(ssvid),
+    ssvid as fishing_ssvid
+  FROM `{{ destination_dataset }}.{{ fishing_vessels_table }}`
+),
+--
+-- Get disabling events from automated table
+-- Any feature with time, location, summary stats
+--
+gaps AS (
+  SELECT 
+    *,
+    IF(gap_id IN (
+      SELECT event_id 
+      FROM `world-fishing-827.pipe_production_v20201001.proto_published_events_ais_gaps`
+      ),
+      true,
+      false
+    ) as disabling_event
+  FROM `world-fishing-827.pipe_production_v20201001.proto_ais_gap_events` a
+  JOIN fishing_vessels b
+  ON (
+    EXTRACT(YEAR from gap_start) = b.year
+    AND a.ssvid = b.fishing_ssvid
+  )
+  WHERE DATE(gap_start) BETWEEN '{{ start_date }}' AND '{{ end_date }}'
+  AND DATE(gap_end) <= '{{ end_date }}'
+  AND gap_hours >= 12
+)
+--
+-- Return final gaps dataset with labeled disabling events
+--
+SELECT
+  ssvid,
+  gap_id,
+  disabling_event,
+  vessel_class,
+  flag,
+  year,
+  gap_start,
+  gap_end,
+  gap_start_lat as off_lat,
+  gap_start_lon as off_lon,
+  gap_end_lat as on_lat,
+  gap_end_lon as on_lon,
+  gap_start_distance_from_shore_m as off_distance_from_shore_m,
+  gap_end_distance_from_shore_m as on_distance_from_shore_m,
+  gap_hours,
+  gap_implied_speed_knots
+FROM gaps
+WHERE DATE(gap_start) BETWEEN '{{ start_date }}' AND '{{ end_date }}'

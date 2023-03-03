@@ -1,0 +1,80 @@
+#standardSQL
+--
+-- TABLE DEFINITION
+--
+  CREATE OR REPLACE TABLE
+    `{{ destination_dataset }}.{{ destination_table }}`
+  PARTITION BY date
+  CLUSTER BY
+  vessel_class,
+  flag
+  AS
+--
+-- QUERY
+--
+WITH
+--
+-- Fishing vessels list
+--
+fishing_vessels AS (
+  SELECT *
+  FROM `{{ destination_dataset }}.{{ fishing_vessels_table }}`
+),
+--
+-- AIS positions
+--
+positions AS (
+  SELECT
+    DATE(_partitiontime) as date,
+    FLOOR(lat * 4) as lat_bin,
+    FLOOR(lon * 4) as lon_bin,
+    timestamp,
+    vessel_class,
+    flag,
+    hours,
+    IF(vessel_class = 'squid_jigger', night_loitering, nnet_score) as fishing_score,
+    IF(hours<12, hours, 0) hours_in_gaps_under_12,
+    IF(hours>=12, hours, 0) hours_in_gaps_over_12,
+  FROM `pipe_production_v20201001.research_messages` a
+  JOIN fishing_vessels b
+  ON
+    a.ssvid = b.ssvid
+    AND extract(year from a._partitiontime) = b.year
+  WHERE seg_id in (
+    SELECT seg_id
+    FROM `pipe_production_v20201001.research_segs`
+    WHERE good_seg
+    AND NOT overlapping_and_short
+  )
+  AND is_fishing_vessel
+  # bounding box: lat 10 to 60, lon -180 to -100
+  AND lat BETWEEN 10 AND 60
+  AND lon BETWEEN -180 AND -100
+  AND date(_partitiontime) BETWEEN "{{ start_date }}" and "{{ end_date }}"
+),
+--
+-- Add is_fishing to positions
+--
+positions_with_fishing AS (
+  SELECT
+    * EXCEPT(fishing_score),
+    IFNULL(fishing_score > 0.5, false) as is_fishing
+  FROM positions
+)
+--
+-- Return gridded fishing table
+--
+SELECT
+  date,
+  CAST(lat_bin / 4 + 0.125 as NUMERIC) lat_bin,
+  CAST(lon_bin / 4 + 0.125 as NUMERIC) lon_bin,
+  vessel_class,
+  flag,
+  sum(hours) as hours,
+  sum(if(is_fishing, hours, 0)) as fishing_hours,
+  sum(hours_in_gaps_over_12) as hours_in_gaps_over_12,
+  sum(hours_in_gaps_under_12) as hours_in_gaps_under_12,
+  sum(if(is_fishing, hours_in_gaps_over_12, 0)) as fishing_hours_in_gaps_over_12,
+  sum(if(is_fishing, hours_in_gaps_under_12, 0)) as fishing_hours_in_gaps_under_12
+FROM positions_with_fishing
+GROUP BY date, lat_bin, lon_bin, vessel_class, flag
