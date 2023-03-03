@@ -1,3 +1,6 @@
+# OLE data
+data/ole
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
