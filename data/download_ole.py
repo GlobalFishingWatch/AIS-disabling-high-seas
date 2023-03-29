@@ -24,9 +24,9 @@ if 'gaps' in tables_to_download:
 
     # Save to csv
     gap_df.to_csv(
-        f'data/ole/ole_gap_events.zip',
+        f'data/ole/ole_gap_events_{config_ole.output_version}.zip',
         index = False,
-        compression = dict(method='zip', archive_name=f'ole_gap_events.csv')
+        compression = dict(method='zip', archive_name=f'ole_gap_events_{config_ole.output_version}.csv')
         )
 
 ##############################
@@ -44,9 +44,9 @@ if 'vessels' in tables_to_download:
 
     # Save to csv
     vessels_df.to_csv(
-        f'data/ole/ole_vessels.zip',
+        f'data/ole/ole_vessels_{config_ole.output_version}.zip',
         index = False,
-        compression = dict(method='zip', archive_name=f'ole_vessels.csv')
+        compression = dict(method='zip', archive_name=f'ole_vessels_{config_ole.output_version}.csv')
         )
 
 ##############################
@@ -55,8 +55,8 @@ if 'vessels' in tables_to_download:
 
 if 'fishing' in tables_to_download:
     
-    if not os.path.exists('data/ole/fishing'):
-        os.makedirs('data/ole/ole_fishing')
+    if not os.path.exists(f'data/ole/ole_fishing_{config_ole.output_version}'):
+        os.makedirs(f'data/ole/ole_fishing_{config_ole.output_version}')
 
     for y in range(2017,2023):
         for m in range(1,13):
@@ -74,6 +74,6 @@ if 'fishing' in tables_to_download:
 
             # Save to csv
             fishing_df.to_csv(
-                f'data/ole/ole_fishing/ole_fishing_{y}_{m}.csv',
+                f'data/ole/ole_fishing_{config_ole.output_version}/ole_fishing_{config_ole.output_version}_{y}_{m}.csv',
                 index = False
                 )

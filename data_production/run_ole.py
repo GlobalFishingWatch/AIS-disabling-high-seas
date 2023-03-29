@@ -50,7 +50,7 @@ tables_to_run = config_ole.tables_to_run
 # Produce the list of fishing vessels used for the analysis
 #########################################################################
 if 'vessels' in tables_to_run:
-    with open('data_production/vessels/fishing_vessels.sql.j2') as f:
+    with open('data_production/ole/fishing_vessels_ole.sql.j2') as f:
         template = Template(f.read())
 
     query = template.render(

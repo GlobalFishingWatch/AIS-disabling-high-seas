@@ -24,7 +24,7 @@ vi_version = 'v20230101'
 vd_version = 'v20230101'
 
 # Output tables version
-output_version = 'v20230302'
+output_version = 'v20230313'
 create_tables = True
 
 # Date range of analysis
@@ -32,7 +32,7 @@ start_date = date(2017, 1, 1)
 end_date = date(2022, 12, 31)
 
 # Tables to run
-tables_to_run = ['gaps']
+tables_to_run = ['fishing']
 
 ###############################################
 # Dates to run
