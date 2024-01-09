@@ -20,9 +20,11 @@ if 'gaps' in tables_to_download:
     """
 
     # Download data
+    print("Querying gaps data")
     gap_df = pd.read_gbq(query, project_id='world-fishing-827')
 
     # Save to csv
+    print("Saving gaps data to csv")
     gap_df.to_csv(
         f'data/ole/ole_gap_events_{config_ole.output_version}.zip',
         index = False,

@@ -39,26 +39,153 @@ gaps AS (
   WHERE DATE(gap_start) BETWEEN '{{ start_date }}' AND '{{ end_date }}'
   AND DATE(gap_end) <= '{{ end_date }}'
   AND gap_hours >= 12
-)
+),
+--
+-- Get identities of vessels on dates of gaps
+--
+ids AS (
+  SELECT
+    ssvid,
+    n_shipname,
+    DATE(_partitiontime) as date,
+    first_timestamp,
+    last_timestamp
+  FROM `world-fishing-827.pipe_production_v20201001.research_ids_daily`
+  WHERE DATE(_partitiontime) BETWEEN '{{ start_date }}' AND '{{ end_date }}'
+),
+
+gap_ids AS (
+  SELECT 
+    a.ssvid,
+    a.gap_id,
+    b.n_shipname as ais_shipname
+  FROM gaps a
+  LEFT JOIN ids b
+  ON (
+    a.ssvid = b.ssvid
+    AND DATE(a.gap_start) = b.date
+    AND a.gap_start BETWEEN b.first_timestamp AND b.last_timestamp
+    )
+),
+---
+--- Get the RFMO of the gap event
+---
+gaps_rfmo AS (
+  SELECT *
+  FROM (
+    SELECT
+      ssvid,
+      gap_id,
+      gap_start,
+      gap_end,
+      TRIM(rfmo) as rfmo
+    FROM (
+      SELECT 
+        *,
+        SPLIT(gap_start_rfmo, ",") as gap_rfmos
+      FROM gaps
+      WHERE gap_start_rfmo != ''
+    ),UNNEST(gap_rfmos) as rfmo 
+  )
+  WHERE rfmo IN ('IATTC','WCPFC')
+),
+--
+-- Join shipname to gaps by RFMO to join with authorizations
+--
+gaps_rfmo_ids AS (
+  SELECT *
+  FROM gaps_rfmo
+  LEFT JOIN gap_ids
+  USING(ssvid,gap_id)
+),
+
+gaps_registry AS (
+  SELECT
+    a.ssvid,
+    a.ais_shipname as n_shipname_ais,
+    b.n_shipname_registry,
+    gap_id,
+    a.gap_start,
+    a.gap_end,
+    flag,
+    rfmo,
+    authorized_from,
+    authorized_to,
+    CASE 
+      WHEN gap_start > authorized_from
+        AND gap_end < authorized_to 
+      THEN 'authorized'
+      WHEN (gap_start > authorized_from 
+          AND gap_start < authorized_to)
+        OR (gap_end > authorized_from
+          AND gap_end < authorized_to)
+      THEN 'partial_authorization'
+    ELSE 'unknown_authorization'
+    END as authorization
+  FROM gaps_rfmo_ids a
+  JOIN (
+    SELECT
+      ssvid,
+      flag,
+      n_shipname as n_shipname_registry,
+      authorized_from,
+      authorized_to,
+      source_code
+    FROM `world-fishing-827.pipe_ais_v3_alpha_published.identity_authorization_v20231001`
+  ) b
+  ON a.ssvid = b.ssvid
+  AND a.rfmo = b.source_code
+  AND a.ais_shipname = b.n_shipname_registry
+),
+
 --
 -- Return final gaps dataset with labeled disabling events
 --
-SELECT
-  ssvid,
-  gap_id,
-  disabling_event,
-  vessel_class,
-  flag,
-  year,
-  gap_start,
-  gap_end,
-  gap_start_lat as off_lat,
-  gap_start_lon as off_lon,
-  gap_end_lat as on_lat,
-  gap_end_lon as on_lon,
-  gap_start_distance_from_shore_m as off_distance_from_shore_m,
-  gap_end_distance_from_shore_m as on_distance_from_shore_m,
-  gap_hours,
-  gap_implied_speed_knots
-FROM gaps
-WHERE DATE(gap_start) BETWEEN '{{ start_date }}' AND '{{ end_date }}'
+final AS (
+  SELECT
+    ssvid,
+    IF(udfs.mmsi_to_iso3(ssvid) IS NULL, false, true) as valid_ssvid,
+    gap_id,
+    disabling_event,
+    vessel_class,
+    vessel_length_m,
+    vessel_tonnage_gt,
+    flag,
+    year,
+    gap_start,
+    gap_end,
+    gap_start_lat as off_lat,
+    gap_start_lon as off_lon,
+    gap_end_lat as on_lat,
+    gap_end_lon as on_lon,
+    gap_start_distance_from_shore_m as off_distance_from_shore_m,
+    gap_end_distance_from_shore_m as on_distance_from_shore_m,
+    gap_hours,
+    gap_implied_speed_knots,
+    # Vessel identity on RFMO registry
+    IF(gap_id IN (
+      SELECT DISTINCT gap_id
+      FROM gaps_registry
+      WHERE rfmo = 'IATTC'
+    ), true, false) as registered_iattc,
+    IF(gap_id IN (
+      SELECT DISTINCT gap_id
+      FROM gaps_registry
+      WHERE rfmo = 'WCPFC'
+    ), true, false) as registered_wcpfc,
+    # Gap authorization status
+    IF(gap_id IN (
+      SELECT DISTINCT gap_id
+      FROM gaps_registry
+      WHERE authorization = 'authorized'
+    ), true, false) as authorized,
+    IF(gap_id IN (
+      SELECT DISTINCT gap_id
+      FROM gaps_registry
+      WHERE authorization = 'partially_authorized'
+    ), true, false) as partially_authorized
+  FROM gaps
+  WHERE DATE(gap_start) BETWEEN '{{ start_date }}' AND '{{ end_date }}'
+)
+
+SELECT * FROM final

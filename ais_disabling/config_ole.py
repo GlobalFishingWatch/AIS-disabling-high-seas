@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, date
 ###############################################
 
 # Test run queries?
-test_run = False
+test_run = True
 
 # BQ datasets/tables
 gfw_research = 'gfw_research'
@@ -32,7 +32,7 @@ start_date = date(2017, 1, 1)
 end_date = date(2022, 12, 31)
 
 # Tables to run
-tables_to_run = ['fishing']
+tables_to_run = ['gaps']
 
 ###############################################
 # Dates to run
